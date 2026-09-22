@@ -86,6 +86,8 @@ void VocabLibraryActivity::promptDictionaryForNewBook(std::string title) {
   DictionaryRegistry::discover(dictionaries);
   if (dictionaries.empty()) {
     LOG_ERR("VOCAB", "No dictionaries found on SD card");
+    optionPopup.show(StrId::STR_VOCAB_NO_DICTIONARIES, std::vector<std::string>{tr(STR_OK_BUTTON)}, 0, [](int) {});
+    requestUpdate();
     return;
   }
 

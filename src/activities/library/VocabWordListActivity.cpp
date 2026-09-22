@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "MappedInputManager.h"
 #include "activities/reader/DictionaryDefinitionActivity.h"
 #include "activities/util/KeyboardEntryActivity.h"
 #include "components/UITheme.h"
@@ -13,9 +14,13 @@
 
 namespace fui = freeink::ui;
 
+namespace {
+constexpr int ENTER_ACTIONS_MODE_MS = 700;
+}  // namespace
+
 VocabWordListActivity::VocabWordListActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, int bookId,
                                              std::string bookTitle, std::string dictionaryFolder)
-    : UiListActivity("VocabWordList", renderer, mappedInput),
+    : UiListActivity("VocabWordList", renderer, mappedInput, /*wantsTouchLongPress=*/true),
       bookId(bookId),
       bookTitle(std::move(bookTitle)),
       dictionaryFolder(std::move(dictionaryFolder)) {}
@@ -47,6 +52,7 @@ void VocabWordListActivity::rebuildRowItems() {
 }
 
 void VocabWordListActivity::activateIndex(const int index) {
+  if (optionPopup.isActive()) return;
   nav.selected = index;
   app.clearTapFlash();
 
@@ -56,6 +62,14 @@ void VocabWordListActivity::activateIndex(const int index) {
   }
 
   startAddWord();
+}
+
+void VocabWordListActivity::onRowLongPress(const int index) {
+  if (optionPopup.isActive()) return;
+  if (index < 0 || index >= static_cast<int>(words.size())) return;
+  app.clearTapFlash();
+  nav.selected = index;
+  showDeleteConfirmation(index);
 }
 
 void VocabWordListActivity::startAddWord() {
@@ -72,9 +86,37 @@ void VocabWordListActivity::startAddWord() {
     if (VocabWordFile::addWord(bookId, word)) {
       VocabWordFile::load(bookId, words);
       rebuildRowItems();
+    } else {
+      optionPopup.show(StrId::STR_VOCAB_WORD_ALREADY_ADDED, std::vector<std::string>{tr(STR_OK_BUTTON)}, 0,
+                       [](int) {});
     }
     requestUpdate();
   });
+}
+
+void VocabWordListActivity::showDeleteConfirmation(const int index) {
+  if (index < 0 || index >= static_cast<int>(words.size()) || optionPopup.isActive()) return;
+  const char* options[] = {tr(STR_CANCEL), tr(STR_DELETE)};
+  optionPopup.show(tr(STR_CONFIRM_DELETE_WORD), options, 2, 0, [this, index](int idx) {
+    if (idx == 1) deleteWord(index);
+    requestUpdate();
+  });
+  requestUpdate();
+}
+
+void VocabWordListActivity::deleteWord(const int index) {
+  if (index < 0 || index >= static_cast<int>(words.size())) return;
+  words.erase(words.begin() + index);
+  if (!VocabWordFile::save(bookId, words)) {
+    LOG_ERR("VOCAB", "Failed to save word list after delete");
+  }
+  rebuildRowItems();
+
+  if (nav.selected >= static_cast<int>(words.size()) && nav.selected > 0) {
+    nav.selected--;
+  }
+  nav.follow(listCount());
+  requestUpdate(true);
 }
 
 void VocabWordListActivity::lookupWord(const std::string& word) {
@@ -88,6 +130,8 @@ void VocabWordListActivity::lookupWord(const std::string& word) {
   }
   if (!dictOpenOk) {
     LOG_ERR("VOCAB", "Failed to open/index dictionary %s", dictionaryFolder.c_str());
+    optionPopup.show(StrId::STR_DICT_ERROR, std::vector<std::string>{tr(STR_OK_BUTTON)}, 0, [](int) {});
+    requestUpdate();
     return;
   }
 
@@ -96,6 +140,8 @@ void VocabWordListActivity::lookupWord(const std::string& word) {
   Dictionary::LookupResult result = Dictionary::LookupResult::NotFound;
   if (!dict.lookup(word.c_str(), definition, headword, &result)) {
     LOG_DBG("VOCAB", "Word not found in %s: %s", dictionaryFolder.c_str(), word.c_str());
+    optionPopup.show(StrId::STR_DICT_NOT_FOUND, std::vector<std::string>{tr(STR_OK_BUTTON)}, 0, [](int) {});
+    requestUpdate();
     return;
   }
 
@@ -103,6 +149,29 @@ void VocabWordListActivity::lookupWord(const std::string& word) {
       makeUniqueNoThrow<DictionaryDefinitionActivity>(renderer, mappedInput, std::move(headword),
                                                        std::move(definition), dict.definitionsAreHtml()),
       [this](const ActivityResult&) { requestUpdate(); });
+}
+
+bool VocabWordListActivity::handleCustomInput() { return optionPopup.handleInput(mappedInput, [this] { requestUpdate(); }); }
+
+bool VocabWordListActivity::handleButtons() {
+  if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, ENTER_ACTIONS_MODE_MS)) {
+    showDeleteConfirmation(nav.selected);
+    return true;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    onBackButton();
+    return true;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    if (nav.selected >= 0 && nav.selected < listCount()) activateIndex(nav.selected);
+    return true;
+  }
+  return false;
+}
+
+void VocabWordListActivity::render(RenderLock&& lock) {
+  if (optionPopup.processRender(renderer, mappedInput)) return;
+  UiListActivity::render(std::move(lock));
 }
 
 void VocabWordListActivity::buildScreen(UiScreen& screen) {
@@ -119,7 +188,9 @@ void VocabWordListActivity::buildScreen(UiScreen& screen) {
   props.items = rowItems_.data();
   props.count = static_cast<uint16_t>(rowItems_.size());
   props.action = ACTION_ROW;
-  props.inputMask = fui::InputTouch;
+  // Tap looks the word up; long-press shows the delete confirmation
+  // (physical buttons stay in handleButtons()).
+  props.inputMask = fui::InputTouch | fui::InputLongPress;
   syncListViewport(screen, props);
   screen.list(props);
 }
