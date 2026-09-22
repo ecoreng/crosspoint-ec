@@ -26,7 +26,7 @@
 #include "fontIds.h"
 
 int HomeActivity::getMenuItemCount() const {
-  int count = 4;  // File Browser, Library, File transfer, Settings
+  int count = 5;  // File Browser, Library, File transfer, Settings, Vocabulary
   if (!recentBooks.empty()) {
     count += recentBooks.size();
   }
@@ -322,6 +322,9 @@ void HomeActivity::loop() {
       case HomeMenuItem::SETTINGS_MENU:
         onSettingsOpen();
         break;
+      case HomeMenuItem::VOCAB_LIBRARY:
+        onVocabLibraryOpen();
+        break;
       default:
         break;
     }
@@ -523,3 +526,5 @@ void HomeActivity::onSettingsOpen() { activityManager.goToSettings(); }
 void HomeActivity::onFileTransferOpen() { activityManager.goToFileTransfer(); }
 
 void HomeActivity::onOpdsBrowserOpen() { activityManager.goToBrowser(); }
+
+void HomeActivity::onVocabLibraryOpen() { activityManager.goToVocabLibrary(); }
