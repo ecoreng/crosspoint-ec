@@ -67,4 +67,9 @@ bool addWord(int bookId, const std::string& word) {
   return save(bookId, words);
 }
 
+void remove(int bookId) {
+  const std::string path = pathFor(bookId);
+  if (Storage.exists(path.c_str())) Storage.remove(path.c_str());
+}
+
 }  // namespace VocabWordFile
