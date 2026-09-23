@@ -29,6 +29,7 @@ void VocabLibraryActivity::onEnter() {
   rebuildRowItems();
   appliedOrientation = SETTINGS.orientation;
   ReaderUtils::applyOrientation(renderer, appliedOrientation);
+  app.on(ACTION_ADD_BOOK, &VocabLibraryActivity::addBookActionTrampoline, this);
 }
 
 void VocabLibraryActivity::loop() {
@@ -47,12 +48,12 @@ void VocabLibraryActivity::onExit() {
   UiListActivity::onExit();
 }
 
-int VocabLibraryActivity::getItemCount() const { return VOCAB_BOOKS.getCount() + 1; }
+int VocabLibraryActivity::getItemCount() const { return VOCAB_BOOKS.getCount(); }
 
 void VocabLibraryActivity::rebuildRowItems() {
   rowItems_.clear();
   const auto& books = VOCAB_BOOKS.getBooks();
-  rowItems_.reserve(books.size() + 1);
+  rowItems_.reserve(books.size());
 
   for (size_t i = 0; i < books.size(); i++) {
     fui::ListItem item;
@@ -61,11 +62,6 @@ void VocabLibraryActivity::rebuildRowItems() {
     item.actionValue = static_cast<int16_t>(i);
     rowItems_.push_back(item);
   }
-
-  fui::ListItem addBook;
-  addBook.label = tr(STR_ADD_VOCAB_BOOK);
-  addBook.actionValue = static_cast<int16_t>(books.size());
-  rowItems_.push_back(addBook);
 }
 
 const char* VocabLibraryActivity::headerTitle() const { return tr(STR_VOCABULARY); }
@@ -74,7 +70,7 @@ bool VocabLibraryActivity::handleCustomInput() { return optionPopup.handleInput(
 
 bool VocabLibraryActivity::handleButtons() {
   if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, ENTER_ACTIONS_MODE_MS)) {
-    showDeleteConfirmation(nav.selected);
+    if (nav.selected >= 1) showDeleteConfirmation(nav.selected - 1);
     return true;
   }
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
@@ -82,7 +78,11 @@ bool VocabLibraryActivity::handleButtons() {
     return true;
   }
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    if (nav.selected >= 0 && nav.selected < listCount()) activateIndex(nav.selected);
+    if (nav.selected == 0) {
+      startAddBook();
+    } else if (nav.selected >= 1 && nav.selected <= listCount()) {
+      activateIndex(nav.selected - 1);
+    }
     return true;
   }
   return false;
@@ -90,29 +90,50 @@ bool VocabLibraryActivity::handleButtons() {
 
 void VocabLibraryActivity::activateIndex(const int index) {
   if (optionPopup.isActive()) return;
-  nav.selected = index;
   app.clearTapFlash();
 
-  const auto& books = VOCAB_BOOKS.getBooks();
-  if (index >= 0 && index < static_cast<int>(books.size())) {
-    const VocabBook& book = books[index];
-    startActivityForResult(
-        makeUniqueNoThrow<VocabWordListActivity>(renderer, mappedInput, book.id, book.title, book.dictionaryFolder),
-        [this](const ActivityResult&) {
-          rebuildRowItems();
-          requestUpdate();
-        });
+  const VocabBook& book = VOCAB_BOOKS.getBooks()[index];
+  startActivityForResult(
+      makeUniqueNoThrow<VocabWordListActivity>(renderer, mappedInput, book.id, book.title, book.dictionaryFolder),
+      [this](const ActivityResult&) {
+        rebuildRowItems();
+        requestUpdate();
+      });
+}
+
+void VocabLibraryActivity::onRowAction(const fui::ActionEvent& event) {
+  nav.selected = event.value + 1;  // ring position, not row index (0 = Add book button)
+  if (event.longPress) {
+    onRowLongPress(event.value);
     return;
   }
+  activateIndex(event.value);
+}
 
-  startAddBook();
+void VocabLibraryActivity::addBookActionTrampoline(const fui::ActionEvent&, void* user) {
+  auto* self = static_cast<VocabLibraryActivity*>(user);
+  if (self->optionPopup.isActive()) return;
+  self->nav.selected = 0;
+  self->app.clearTapFlash();
+  self->startAddBook();
+}
+
+void VocabLibraryActivity::navigateButtons() {
+  const int ringSize = VOCAB_BOOKS.getCount() + 1;
+  buttonNavigator.onNextRelease([this, ringSize] { moveSelectionTo(ButtonNavigator::nextIndex(nav.selected, ringSize)); });
+  buttonNavigator.onPreviousRelease(
+      [this, ringSize] { moveSelectionTo(ButtonNavigator::previousIndex(nav.selected, ringSize)); });
+  buttonNavigator.onNextContinuous(
+      [this, ringSize] { moveSelectionTo(ButtonNavigator::nextPageIndex(nav.selected, ringSize, nav.inputPageRows())); });
+  buttonNavigator.onPreviousContinuous(
+      [this, ringSize] { moveSelectionTo(ButtonNavigator::previousPageIndex(nav.selected, ringSize, nav.inputPageRows())); });
 }
 
 void VocabLibraryActivity::onRowLongPress(const int index) {
   if (optionPopup.isActive()) return;
   if (index < 0 || index >= VOCAB_BOOKS.getCount()) return;
   app.clearTapFlash();
-  nav.selected = index;
+  nav.selected = index + 1;
   showDeleteConfirmation(index);
 }
 
@@ -134,10 +155,13 @@ void VocabLibraryActivity::deleteBook(const int index) {
   VOCAB_BOOKS.deleteBook(id);
   rebuildRowItems();
 
-  if (nav.selected >= VOCAB_BOOKS.getCount() && nav.selected > 0) {
+  // nav.selected is a ring position (0 = Add book, 1..N = book rows); clamp
+  // it into range if the deleted row was the last one, then let the next
+  // buildScreen's syncListViewport() pull the viewport to it.
+  if (nav.selected > VOCAB_BOOKS.getCount()) {
     nav.selected--;
   }
-  nav.follow(listCount());
+  nav.requestSelection(nav.selected);
   requestUpdate(true);
 }
 
@@ -174,7 +198,7 @@ void VocabLibraryActivity::promptDictionaryForNewBook(std::string title) {
                    [this, title = std::move(title), names](int idx) {
                      VOCAB_BOOKS.addBook(title, names[idx]);
                      rebuildRowItems();
-                     nav.selected = VOCAB_BOOKS.getCount() - 1;
+                     nav.selected = VOCAB_BOOKS.getCount();  // ring position of the new last row
                      requestUpdate();
                    });
   requestUpdate();
@@ -190,6 +214,19 @@ void VocabLibraryActivity::buildScreen(UiScreen& screen) {
                   static_cast<int16_t>(safe.x)});
   screen.spacer(static_cast<int16_t>(metrics.verticalSpacing));
 
+  // "Add book" is a fixed row pinned above the list (ring position 0) so it
+  // stays reachable as the book list grows, instead of scrolling with it.
+  fui::ButtonProps addBook;
+  addBook.label = tr(STR_ADD_VOCAB_BOOK);
+  addBook.action = ACTION_ADD_BOOK;
+  addBook.inputMask = fui::InputTouch;
+  addBook.text = screen.theme().bodyText;
+  addBook.styles = screen.theme().listRow;
+  addBook.radius = static_cast<uint8_t>(metrics.listRowRadius);
+  addBook.state = nav.selected == 0 ? fui::StateSelected : fui::StateNormal;
+  fui::button(screen.frame(), screen.takeTop(static_cast<int16_t>(metrics.listRowHeight)), addBook);
+  screen.spacer(static_cast<int16_t>(metrics.listRowGap));
+
   fui::ListProps props;
   props.items = rowItems_.data();
   props.count = static_cast<uint16_t>(rowItems_.size());
@@ -197,7 +234,7 @@ void VocabLibraryActivity::buildScreen(UiScreen& screen) {
   // Tap opens the book; long-press shows the delete confirmation (physical
   // buttons stay in handleButtons()).
   props.inputMask = fui::InputTouch | fui::InputLongPress;
-  syncListViewport(screen, props);
+  syncListViewport(screen, props, /*selectionOffset=*/1);
   screen.list(props);
 }
 
