@@ -8,7 +8,12 @@
 // One user-declared vocabulary book: a title plus the on-device dictionary
 // folder (DictionaryRegistry name) used to look up words added to it. Not
 // tied to an actual book file — id is a stable key for the word-list file
-// under /.crosspoint/vocab/<id>.txt (see VocabWordFile).
+// under /vocab/words/<id>.txt (see VocabWordFile).
+//
+// Lives under a plain, visible /vocab/ folder rather than the app's private
+// .crosspoint/ cache: unlike that folder, this one is meant to be found and
+// read by other tools (e.g. a phone importing these word lists), so it must
+// not be hidden by a file browser's dotfile filter.
 struct VocabBook {
   int id = 0;
   std::string title;
@@ -25,7 +30,7 @@ class VocabBooksStore : public PersistableStore<VocabBooksStore> {
   friend class PersistableStore<VocabBooksStore>;
 
  public:
-  static const char* getFilePath() { return "/.crosspoint/vocab_books.json"; }
+  static const char* getFilePath() { return "/vocab/books.json"; }
   void toJson(JsonDocument& doc) const;
   bool fromJson(JsonVariantConst doc);
 

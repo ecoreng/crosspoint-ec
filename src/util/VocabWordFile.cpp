@@ -13,7 +13,7 @@ namespace {
 
 std::string pathFor(int bookId) {
   char buf[48];
-  snprintf(buf, sizeof(buf), "/.crosspoint/vocab/%d.txt", bookId);
+  snprintf(buf, sizeof(buf), "/vocab/words/%d.txt", bookId);
   return buf;
 }
 
@@ -43,7 +43,7 @@ bool load(int bookId, std::vector<std::string>& words) {
 }
 
 bool save(int bookId, const std::vector<std::string>& words) {
-  Storage.mkdir("/.crosspoint/vocab");
+  Storage.mkdir("/vocab/words");
 
   std::string content;
   content.reserve(words.size() * 12);
