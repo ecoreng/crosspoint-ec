@@ -6,9 +6,17 @@
 
 #include <cstring>
 #include <limits>
+#include <string>
 
 bool PersistableStoreBase::writeDocToFile(const char* path, const JsonDocument& doc) {
-  Storage.mkdir("/.crosspoint");
+  // Every store's file sits directly under one parent directory (historically
+  // always /.crosspoint; VocabBooksStore now lives under the plain, visible
+  // /vocab instead). Derive it from path rather than hardcoding one, so a
+  // store's own directory just needs to exist -- mkdir on an existing
+  // directory is a no-op.
+  if (const char* lastSlash = strrchr(path, '/'); lastSlash && lastSlash != path) {
+    Storage.mkdir(std::string(path, lastSlash - path).c_str());
+  }
   String json;
   serializeJson(doc, json);
   if (!Storage.writeFile(path, json)) {
