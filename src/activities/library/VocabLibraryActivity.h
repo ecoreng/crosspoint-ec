@@ -13,6 +13,7 @@ class VocabLibraryActivity final : public UiListActivity {
   explicit VocabLibraryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
 
   void onEnter() override;
+  void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
 
