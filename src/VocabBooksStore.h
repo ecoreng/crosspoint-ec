@@ -35,6 +35,10 @@ class VocabBooksStore : public PersistableStore<VocabBooksStore> {
 
   // Assigns a fresh id, appends, and persists. Returns the new book's id.
   int addBook(const std::string& title, const std::string& dictionaryFolder);
+
+  // Removes the book and persists. Does not touch its word-list file --
+  // callers that also want that gone should use VocabWordFile::remove(id).
+  void deleteBook(int id);
 };
 
 #define VOCAB_BOOKS VocabBooksStore::getInstance()

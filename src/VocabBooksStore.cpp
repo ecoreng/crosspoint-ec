@@ -44,3 +44,11 @@ int VocabBooksStore::addBook(const std::string& title, const std::string& dictio
   }
   return id;
 }
+
+void VocabBooksStore::deleteBook(int id) {
+  books.erase(std::remove_if(books.begin(), books.end(), [id](const VocabBook& b) { return b.id == id; }),
+             books.end());
+  if (!saveToFile()) {
+    LOG_ERR("VOCAB", "Failed to persist vocab books after deleting %d", id);
+  }
+}

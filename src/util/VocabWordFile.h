@@ -19,4 +19,7 @@ bool save(int bookId, const std::vector<std::string>& words);
 // Returns false if the word was already present or the save failed.
 bool addWord(int bookId, const std::string& word);
 
+// Deletes the word-list file for bookId, if any. A missing file is not an error.
+void remove(int bookId);
+
 }  // namespace VocabWordFile

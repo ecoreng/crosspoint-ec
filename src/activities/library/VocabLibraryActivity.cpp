@@ -5,16 +5,22 @@
 #include <Memory.h>
 
 #include "VocabBooksStore.h"
+#include "MappedInputManager.h"
 #include "activities/reader/ReaderUtils.h"
 #include "activities/util/KeyboardEntryActivity.h"
 #include "components/UITheme.h"
 #include "util/DictionaryRegistry.h"
+#include "util/VocabWordFile.h"
 #include "VocabWordListActivity.h"
 
 namespace fui = freeink::ui;
 
+namespace {
+constexpr int ENTER_ACTIONS_MODE_MS = 700;
+}  // namespace
+
 VocabLibraryActivity::VocabLibraryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-    : UiListActivity("VocabLibrary", renderer, mappedInput) {}
+    : UiListActivity("VocabLibrary", renderer, mappedInput, /*wantsTouchLongPress=*/true) {}
 
 void VocabLibraryActivity::onEnter() {
   UiListActivity::onEnter();
@@ -66,7 +72,24 @@ const char* VocabLibraryActivity::headerTitle() const { return tr(STR_VOCABULARY
 
 bool VocabLibraryActivity::handleCustomInput() { return optionPopup.handleInput(mappedInput, [this] { requestUpdate(); }); }
 
+bool VocabLibraryActivity::handleButtons() {
+  if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, ENTER_ACTIONS_MODE_MS)) {
+    showDeleteConfirmation(nav.selected);
+    return true;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    onBackButton();
+    return true;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    if (nav.selected >= 0 && nav.selected < listCount()) activateIndex(nav.selected);
+    return true;
+  }
+  return false;
+}
+
 void VocabLibraryActivity::activateIndex(const int index) {
+  if (optionPopup.isActive()) return;
   nav.selected = index;
   app.clearTapFlash();
 
@@ -83,6 +106,39 @@ void VocabLibraryActivity::activateIndex(const int index) {
   }
 
   startAddBook();
+}
+
+void VocabLibraryActivity::onRowLongPress(const int index) {
+  if (optionPopup.isActive()) return;
+  if (index < 0 || index >= VOCAB_BOOKS.getCount()) return;
+  app.clearTapFlash();
+  nav.selected = index;
+  showDeleteConfirmation(index);
+}
+
+void VocabLibraryActivity::showDeleteConfirmation(const int index) {
+  if (index < 0 || index >= VOCAB_BOOKS.getCount() || optionPopup.isActive()) return;
+  const char* options[] = {tr(STR_CANCEL), tr(STR_DELETE)};
+  optionPopup.show(tr(STR_CONFIRM_DELETE_VOCAB_BOOK), options, 2, 0, [this, index](int idx) {
+    if (idx == 1) deleteBook(index);
+    requestUpdate();
+  });
+  requestUpdate();
+}
+
+void VocabLibraryActivity::deleteBook(const int index) {
+  const auto& books = VOCAB_BOOKS.getBooks();
+  if (index < 0 || index >= static_cast<int>(books.size())) return;
+  const int id = books[index].id;
+  VocabWordFile::remove(id);
+  VOCAB_BOOKS.deleteBook(id);
+  rebuildRowItems();
+
+  if (nav.selected >= VOCAB_BOOKS.getCount() && nav.selected > 0) {
+    nav.selected--;
+  }
+  nav.follow(listCount());
+  requestUpdate(true);
 }
 
 void VocabLibraryActivity::startAddBook() {
@@ -138,7 +194,9 @@ void VocabLibraryActivity::buildScreen(UiScreen& screen) {
   props.items = rowItems_.data();
   props.count = static_cast<uint16_t>(rowItems_.size());
   props.action = ACTION_ROW;
-  props.inputMask = fui::InputTouch;
+  // Tap opens the book; long-press shows the delete confirmation (physical
+  // buttons stay in handleButtons()).
+  props.inputMask = fui::InputTouch | fui::InputLongPress;
   syncListViewport(screen, props);
   screen.list(props);
 }

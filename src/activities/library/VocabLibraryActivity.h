@@ -21,13 +21,17 @@ class VocabLibraryActivity final : public UiListActivity {
   int listCount() const override { return getItemCount(); }
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
+  void onRowLongPress(int index) override;
   bool handleCustomInput() override;
+  bool handleButtons() override;
   const char* headerTitle() const override;
 
   int getItemCount() const;
   void rebuildRowItems();
   void startAddBook();
   void promptDictionaryForNewBook(std::string title);
+  void showDeleteConfirmation(int index);
+  void deleteBook(int index);
 
   std::vector<freeink::ui::ListItem> rowItems_;
   OptionPopup optionPopup;
