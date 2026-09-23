@@ -5,6 +5,7 @@
 #include <Memory.h>
 
 #include "VocabBooksStore.h"
+#include "activities/reader/ReaderUtils.h"
 #include "activities/util/KeyboardEntryActivity.h"
 #include "components/UITheme.h"
 #include "util/DictionaryRegistry.h"
@@ -20,6 +21,17 @@ void VocabLibraryActivity::onEnter() {
   VOCAB_BOOKS.loadFromFile();
   nav.selected = 0;
   rebuildRowItems();
+  appliedOrientation = SETTINGS.orientation;
+  ReaderUtils::applyOrientation(renderer, appliedOrientation);
+}
+
+void VocabLibraryActivity::loop() {
+  if (SETTINGS.orientation != appliedOrientation) {
+    appliedOrientation = SETTINGS.orientation;
+    ReaderUtils::applyOrientation(renderer, appliedOrientation);
+    requestUpdate(true);
+  }
+  UiListActivity::loop();
 }
 
 int VocabLibraryActivity::getItemCount() const { return VOCAB_BOOKS.getCount() + 1; }

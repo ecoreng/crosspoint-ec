@@ -8,6 +8,7 @@
 
 #include "MappedInputManager.h"
 #include "activities/reader/DictionaryDefinitionActivity.h"
+#include "activities/reader/ReaderUtils.h"
 #include "activities/util/KeyboardEntryActivity.h"
 #include "components/UITheme.h"
 #include "util/VocabWordFile.h"
@@ -30,6 +31,17 @@ void VocabWordListActivity::onEnter() {
   VocabWordFile::load(bookId, words);
   nav.selected = 0;
   rebuildRowItems();
+  appliedOrientation = SETTINGS.orientation;
+  ReaderUtils::applyOrientation(renderer, appliedOrientation);
+}
+
+void VocabWordListActivity::loop() {
+  if (SETTINGS.orientation != appliedOrientation) {
+    appliedOrientation = SETTINGS.orientation;
+    ReaderUtils::applyOrientation(renderer, appliedOrientation);
+    requestUpdate(true);
+  }
+  UiListActivity::loop();
 }
 
 int VocabWordListActivity::getItemCount() const { return static_cast<int>(words.size()) + 1; }

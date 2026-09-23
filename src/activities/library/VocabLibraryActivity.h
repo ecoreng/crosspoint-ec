@@ -13,6 +13,7 @@ class VocabLibraryActivity final : public UiListActivity {
   explicit VocabLibraryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
 
   void onEnter() override;
+  void loop() override;
   void render(RenderLock&&) override;
 
  private:
@@ -29,4 +30,7 @@ class VocabLibraryActivity final : public UiListActivity {
 
   std::vector<freeink::ui::ListItem> rowItems_;
   OptionPopup optionPopup;
+  // See VocabWordListActivity: picks up SETTINGS.orientation changes made via
+  // the global control-center panel, which doesn't rotate this screen itself.
+  uint8_t appliedOrientation = 0;
 };

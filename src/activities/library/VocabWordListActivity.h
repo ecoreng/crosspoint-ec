@@ -16,6 +16,7 @@ class VocabWordListActivity final : public UiListActivity {
                                  std::string bookTitle, std::string dictionaryFolder);
 
   void onEnter() override;
+  void loop() override;
   void render(RenderLock&&) override;
 
  private:
@@ -44,4 +45,10 @@ class VocabWordListActivity final : public UiListActivity {
   bool dictOpenAttempted = false;
   bool dictOpenOk = false;
   OptionPopup optionPopup;
+  // Mirrors EpubReaderActivity: swiping down anywhere opens the global
+  // control-center panel, whose orientation tile only persists SETTINGS.orientation
+  // (it doesn't rotate non-reader screens itself, see FrontlightPanelActivity's
+  // ACTION_TILE case 2). Each screen that wants to honor it live has to pick up
+  // the change itself; the reader does this in its own loop(), this does the same.
+  uint8_t appliedOrientation = 0;
 };
