@@ -44,15 +44,6 @@ void VocabWordListActivity::loop() {
   UiListActivity::loop();
 }
 
-void VocabWordListActivity::onExit() {
-  // Non-reader screens are never expected to be seen rotated; restore Portrait
-  // so whatever's next (Home, Library, ...) doesn't inherit a state it was
-  // never exercised in, same as ReaderActivity/SleepActivity do at their own
-  // boundaries.
-  ReaderUtils::applyOrientation(renderer, CrossPointSettings::ORIENTATION::PORTRAIT);
-  UiListActivity::onExit();
-}
-
 int VocabWordListActivity::getItemCount() const { return static_cast<int>(words.size()) + 1; }
 
 void VocabWordListActivity::rebuildRowItems() {

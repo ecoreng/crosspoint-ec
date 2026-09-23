@@ -16,7 +16,6 @@ class VocabWordListActivity final : public UiListActivity {
                                  std::string bookTitle, std::string dictionaryFolder);
 
   void onEnter() override;
-  void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
 
