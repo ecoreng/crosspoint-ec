@@ -8,8 +8,11 @@
 
 // Word list for one vocabulary book: plain-text words stored via
 // VocabWordFile. Selecting a word looks it up in the book's assigned
-// dictionary and pushes DictionaryDefinitionActivity to show the result. The
-// last row adds a new word via KeyboardEntryActivity.
+// dictionary and pushes DictionaryDefinitionActivity to show the result. "Add
+// word" is a fixed button pinned above the list (via KeyboardEntryActivity),
+// not a row, so it never scrolls out of reach as the list grows. Navigation
+// is a ring: position 0 is the Add word button, 1..N are the word rows (see
+// UiTabListActivity for the same pattern with a tab bar instead of a button).
 class VocabWordListActivity final : public UiListActivity {
  public:
   explicit VocabWordListActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, int bookId,
@@ -20,10 +23,15 @@ class VocabWordListActivity final : public UiListActivity {
   void render(RenderLock&&) override;
 
  private:
+  // Add word button action; ACTION_ROW/ACTION_USER are base-owned.
+  static constexpr freeink::ui::ActionId ACTION_ADD_WORD = ACTION_USER;
+
   int listCount() const override { return getItemCount(); }
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
+  void onRowAction(const freeink::ui::ActionEvent& event) override;
   void onRowLongPress(int index) override;
+  void navigateButtons() override;
   bool handleCustomInput() override;
   bool handleButtons() override;
   const char* headerTitle() const override { return bookTitle.c_str(); }
@@ -31,6 +39,7 @@ class VocabWordListActivity final : public UiListActivity {
   int getItemCount() const;
   void rebuildRowItems();
   void startAddWord();
+  static void addWordActionTrampoline(const freeink::ui::ActionEvent& event, void* user);
   void lookupWord(const std::string& word);
   void showDeleteConfirmation(int index);
   void deleteWord(int index);

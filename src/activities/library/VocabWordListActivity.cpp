@@ -33,6 +33,7 @@ void VocabWordListActivity::onEnter() {
   rebuildRowItems();
   appliedOrientation = SETTINGS.orientation;
   ReaderUtils::applyOrientation(renderer, appliedOrientation);
+  app.on(ACTION_ADD_WORD, &VocabWordListActivity::addWordActionTrampoline, this);
 }
 
 void VocabWordListActivity::loop() {
@@ -44,11 +45,11 @@ void VocabWordListActivity::loop() {
   UiListActivity::loop();
 }
 
-int VocabWordListActivity::getItemCount() const { return static_cast<int>(words.size()) + 1; }
+int VocabWordListActivity::getItemCount() const { return static_cast<int>(words.size()); }
 
 void VocabWordListActivity::rebuildRowItems() {
   rowItems_.clear();
-  rowItems_.reserve(words.size() + 1);
+  rowItems_.reserve(words.size());
 
   for (size_t i = 0; i < words.size(); i++) {
     fui::ListItem item;
@@ -56,31 +57,47 @@ void VocabWordListActivity::rebuildRowItems() {
     item.actionValue = static_cast<int16_t>(i);
     rowItems_.push_back(item);
   }
-
-  fui::ListItem addWord;
-  addWord.label = tr(STR_ADD_WORD);
-  addWord.actionValue = static_cast<int16_t>(words.size());
-  rowItems_.push_back(addWord);
 }
 
 void VocabWordListActivity::activateIndex(const int index) {
   if (optionPopup.isActive()) return;
-  nav.selected = index;
   app.clearTapFlash();
+  lookupWord(words[index]);
+}
 
-  if (index >= 0 && index < static_cast<int>(words.size())) {
-    lookupWord(words[index]);
+void VocabWordListActivity::onRowAction(const fui::ActionEvent& event) {
+  nav.selected = event.value + 1;  // ring position, not row index (0 = Add word button)
+  if (event.longPress) {
+    onRowLongPress(event.value);
     return;
   }
+  activateIndex(event.value);
+}
 
-  startAddWord();
+void VocabWordListActivity::addWordActionTrampoline(const fui::ActionEvent&, void* user) {
+  auto* self = static_cast<VocabWordListActivity*>(user);
+  if (self->optionPopup.isActive()) return;
+  self->nav.selected = 0;
+  self->app.clearTapFlash();
+  self->startAddWord();
+}
+
+void VocabWordListActivity::navigateButtons() {
+  const int ringSize = static_cast<int>(words.size()) + 1;
+  buttonNavigator.onNextRelease([this, ringSize] { moveSelectionTo(ButtonNavigator::nextIndex(nav.selected, ringSize)); });
+  buttonNavigator.onPreviousRelease(
+      [this, ringSize] { moveSelectionTo(ButtonNavigator::previousIndex(nav.selected, ringSize)); });
+  buttonNavigator.onNextContinuous(
+      [this, ringSize] { moveSelectionTo(ButtonNavigator::nextPageIndex(nav.selected, ringSize, nav.inputPageRows())); });
+  buttonNavigator.onPreviousContinuous(
+      [this, ringSize] { moveSelectionTo(ButtonNavigator::previousPageIndex(nav.selected, ringSize, nav.inputPageRows())); });
 }
 
 void VocabWordListActivity::onRowLongPress(const int index) {
   if (optionPopup.isActive()) return;
   if (index < 0 || index >= static_cast<int>(words.size())) return;
   app.clearTapFlash();
-  nav.selected = index;
+  nav.selected = index + 1;
   showDeleteConfirmation(index);
 }
 
@@ -124,10 +141,13 @@ void VocabWordListActivity::deleteWord(const int index) {
   }
   rebuildRowItems();
 
-  if (nav.selected >= static_cast<int>(words.size()) && nav.selected > 0) {
+  // nav.selected is a ring position (0 = Add word, 1..N = word rows); clamp
+  // it into range if the deleted row was the last one, then let the next
+  // buildScreen's syncListViewport() pull the viewport to it.
+  if (nav.selected > static_cast<int>(words.size())) {
     nav.selected--;
   }
-  nav.follow(listCount());
+  nav.requestSelection(nav.selected);
   requestUpdate(true);
 }
 
@@ -167,7 +187,7 @@ bool VocabWordListActivity::handleCustomInput() { return optionPopup.handleInput
 
 bool VocabWordListActivity::handleButtons() {
   if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, ENTER_ACTIONS_MODE_MS)) {
-    showDeleteConfirmation(nav.selected);
+    if (nav.selected >= 1) showDeleteConfirmation(nav.selected - 1);
     return true;
   }
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
@@ -175,7 +195,11 @@ bool VocabWordListActivity::handleButtons() {
     return true;
   }
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    if (nav.selected >= 0 && nav.selected < listCount()) activateIndex(nav.selected);
+    if (nav.selected == 0) {
+      startAddWord();
+    } else if (nav.selected >= 1 && nav.selected <= listCount()) {
+      activateIndex(nav.selected - 1);
+    }
     return true;
   }
   return false;
@@ -196,6 +220,19 @@ void VocabWordListActivity::buildScreen(UiScreen& screen) {
                   static_cast<int16_t>(safe.x)});
   screen.spacer(static_cast<int16_t>(metrics.verticalSpacing));
 
+  // "Add word" is a fixed row pinned above the list (ring position 0) so it
+  // stays reachable as the word list grows, instead of scrolling with it.
+  fui::ButtonProps addWord;
+  addWord.label = tr(STR_ADD_WORD);
+  addWord.action = ACTION_ADD_WORD;
+  addWord.inputMask = fui::InputTouch;
+  addWord.text = screen.theme().bodyText;
+  addWord.styles = screen.theme().listRow;
+  addWord.radius = static_cast<uint8_t>(metrics.listRowRadius);
+  addWord.state = nav.selected == 0 ? fui::StateSelected : fui::StateNormal;
+  fui::button(screen.frame(), screen.takeTop(static_cast<int16_t>(metrics.listRowHeight)), addWord);
+  screen.spacer(static_cast<int16_t>(metrics.listRowGap));
+
   fui::ListProps props;
   props.items = rowItems_.data();
   props.count = static_cast<uint16_t>(rowItems_.size());
@@ -203,6 +240,6 @@ void VocabWordListActivity::buildScreen(UiScreen& screen) {
   // Tap looks the word up; long-press shows the delete confirmation
   // (physical buttons stay in handleButtons()).
   props.inputMask = fui::InputTouch | fui::InputLongPress;
-  syncListViewport(screen, props);
+  syncListViewport(screen, props, /*selectionOffset=*/1);
   screen.list(props);
 }
