@@ -34,6 +34,13 @@ void VocabLibraryActivity::loop() {
   UiListActivity::loop();
 }
 
+void VocabLibraryActivity::onExit() {
+  // See VocabWordListActivity::onExit: restore Portrait so Home doesn't
+  // inherit a rotation it was never exercised in.
+  ReaderUtils::applyOrientation(renderer, CrossPointSettings::ORIENTATION::PORTRAIT);
+  UiListActivity::onExit();
+}
+
 int VocabLibraryActivity::getItemCount() const { return VOCAB_BOOKS.getCount() + 1; }
 
 void VocabLibraryActivity::rebuildRowItems() {
