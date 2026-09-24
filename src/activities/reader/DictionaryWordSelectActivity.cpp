@@ -156,7 +156,7 @@ void DictionaryWordSelectActivity::performLookup() {
   popup = Popup::Busy;
   if (!dictOpenAttempted) {
     dictOpenAttempted = true;
-    dictOpenOk = dict.open(SETTINGS.dictionaryName);
+    dictOpenOk = dict.open(dictionaryFolder.c_str());
     // needsIndex() opens and validates the .qidx sidecar, so ask it once per
     // open rather than once per word: the answer only changes when we build
     // the sidecar ourselves, which is handled below.
@@ -181,7 +181,8 @@ void DictionaryWordSelectActivity::performLookup() {
     popup = Popup::None;
     startActivityForResult(
         std::make_unique<DictionaryDefinitionActivity>(renderer, mappedInput, std::move(headword),
-                                                       std::move(definition), dict.definitionsAreHtml()),
+                                                       std::move(definition), dictionaryFolder,
+                                                       dict.definitionsAreHtml()),
         [this](const ActivityResult&) { requestUpdate(); });
     return;
   }

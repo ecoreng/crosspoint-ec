@@ -9,6 +9,7 @@
 #include <cstdio>
 
 #include "CrossPointSettings.h"
+#include "DictionaryWordSelectActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "util/DictHtmlPages.h"
@@ -62,6 +63,21 @@ DictionaryDefinitionActivity::BodyArea DictionaryDefinitionActivity::bodyArea() 
   const int bottomArea = metrics.buttonHintsHeight + metrics.verticalSpacing;
   return {renderer.getScreenWidth() - hintGutterWidth - 2 * SIDE_PADDING,
           renderer.getScreenHeight() - topArea - bottomArea};
+}
+
+// Same orientation math as render()'s header/body layout; factored out so
+// openWordSelect() can hand DictionaryWordSelectActivity the exact margins
+// the currently displayed Page is rendered at.
+DictionaryDefinitionActivity::BodyOrigin DictionaryDefinitionActivity::bodyOrigin() const {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const auto orientation = renderer.getOrientation();
+  const bool isLandscapeCw = orientation == GfxRenderer::Orientation::LandscapeClockwise;
+  const bool isLandscape = isLandscapeCw || orientation == GfxRenderer::Orientation::LandscapeCounterClockwise;
+  const bool isInverted = orientation == GfxRenderer::Orientation::PortraitInverted;
+  const int hintGutterWidth = isLandscape ? metrics.sideButtonHintsWidth : 0;
+  const int contentX = isLandscapeCw ? hintGutterWidth : 0;
+  const int contentY = isInverted ? metrics.buttonHintsHeight : 0;
+  return {contentX + SIDE_PADDING, contentY + metrics.topPadding + metrics.headerHeight};
 }
 
 // Styled path: lay the HTML definition out through the EPUB chapter parser
@@ -197,9 +213,26 @@ void DictionaryDefinitionActivity::wrapText() {
   currentPage = 0;
 }
 
+// Opens word selection over the currently displayed Page so any word in this
+// definition can be looked up in turn. Only offered on the styled-HTML path
+// (see class comment): pages is empty on the plain-text fallback, which has
+// no per-word layout data to hit-test.
+void DictionaryDefinitionActivity::openWordSelect() {
+  if (pages.empty()) return;
+  const BodyOrigin origin = bodyOrigin();
+  startActivityForResult(
+      std::make_unique<DictionaryWordSelectActivity>(renderer, mappedInput, pages[currentPage].get(),
+                                                      dictionaryFolder, origin.x, origin.y),
+      [this](const ActivityResult&) { requestUpdate(); });
+}
+
 void DictionaryDefinitionActivity::loop() {
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     finish();
+    return;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    openWordSelect();
     return;
   }
 
@@ -264,35 +297,32 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
   const auto orientation = renderer.getOrientation();
   const bool isLandscapeCw = orientation == GfxRenderer::Orientation::LandscapeClockwise;
   const bool isLandscapeCcw = orientation == GfxRenderer::Orientation::LandscapeCounterClockwise;
-  const bool isInverted = orientation == GfxRenderer::Orientation::PortraitInverted;
   const int hintGutterWidth = (isLandscapeCw || isLandscapeCcw) ? metrics.sideButtonHintsWidth : 0;
-  const int contentX = isLandscapeCw ? hintGutterWidth : 0;
   const int contentWidth = renderer.getScreenWidth() - hintGutterWidth;
-  const int contentY = isInverted ? metrics.buttonHintsHeight : 0;
+  const BodyOrigin origin = bodyOrigin();
 
   // Header: matched headword left, page counter right.
-  const int headerY = contentY + metrics.topPadding + 10;
-  renderer.drawText(UI_12_FONT_ID, contentX + SIDE_PADDING, headerY, headword.c_str(), true, EpdFontFamily::BOLD);
+  const int headerY = origin.y - metrics.headerHeight + 10;
+  renderer.drawText(UI_12_FONT_ID, origin.x, headerY, headword.c_str(), true, EpdFontFamily::BOLD);
   if (totalPages > 1) {
     char counter[16];
     snprintf(counter, sizeof(counter), "%d/%d", currentPage + 1, totalPages);
     const int counterWidth = renderer.getTextWidth(UI_10_FONT_ID, counter);
-    renderer.drawText(UI_10_FONT_ID, contentX + contentWidth - SIDE_PADDING - counterWidth, headerY, counter);
+    renderer.drawText(UI_10_FONT_ID, origin.x + contentWidth - 2 * SIDE_PADDING - counterWidth, headerY, counter);
   }
 
   // Body: two-pass draw inside a prewarm scope (same pattern as the reader's
   // renderContents) so SD-card font glyphs load from SD in one batch instead
   // of one on-demand overflow read per character on every page turn.
   const int fontId = SETTINGS.getReaderFontId();
-  const int bodyStartY = contentY + metrics.topPadding + metrics.headerHeight;
   auto* fcm = renderer.getFontCacheManager();
   auto scope = fcm->createPrewarmScope();
-  drawBody(fontId, contentX + SIDE_PADDING, bodyStartY);  // scan pass: records codepoints only
+  drawBody(fontId, origin.x, origin.y);  // scan pass: records codepoints only
   scope.endScanAndPrewarm();
-  drawBody(fontId, contentX + SIDE_PADDING, bodyStartY);
+  drawBody(fontId, origin.x, origin.y);
 
-  const auto labels =
-      mappedInput.mapLabels(tr(STR_BACK), "", (currentPage > 0 ? "<" : ""), (currentPage + 1 < totalPages ? ">" : ""));
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), pages.empty() ? "" : tr(STR_LOOKUP),
+                                            (currentPage > 0 ? "<" : ""), (currentPage + 1 < totalPages ? ">" : ""));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   renderer.displayBuffer();
 }
