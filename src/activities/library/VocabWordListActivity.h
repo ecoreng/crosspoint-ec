@@ -43,6 +43,11 @@ class VocabWordListActivity final : public UiListActivity {
   void lookupWord(const std::string& word);
   void showDeleteConfirmation(int index);
   void deleteWord(int index);
+  // Rows display newest-first (index 0 = most recently added) so a new word
+  // stays visible under the pinned Add word button without scrolling; `words`
+  // itself stays in on-disk append order. Converts a display row index to the
+  // matching index into `words`.
+  int storageIndexForRow(int rowIndex) const { return static_cast<int>(words.size()) - 1 - rowIndex; }
 
   int bookId;
   std::string bookTitle;
