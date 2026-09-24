@@ -56,9 +56,10 @@ void VocabLibraryActivity::rebuildRowItems() {
   rowItems_.reserve(books.size());
 
   for (size_t i = 0; i < books.size(); i++) {
+    const VocabBook& book = books[storageIndexForRow(static_cast<int>(i))];
     fui::ListItem item;
-    item.label = books[i].title.c_str();
-    item.subtitle = books[i].dictionaryFolder.c_str();
+    item.label = book.title.c_str();
+    item.subtitle = book.dictionaryFolder.c_str();
     item.actionValue = static_cast<int16_t>(i);
     rowItems_.push_back(item);
   }
@@ -92,7 +93,7 @@ void VocabLibraryActivity::activateIndex(const int index) {
   if (optionPopup.isActive()) return;
   app.clearTapFlash();
 
-  const VocabBook& book = VOCAB_BOOKS.getBooks()[index];
+  const VocabBook& book = VOCAB_BOOKS.getBooks()[storageIndexForRow(index)];
   startActivityForResult(
       makeUniqueNoThrow<VocabWordListActivity>(renderer, mappedInput, book.id, book.title, book.dictionaryFolder),
       [this](const ActivityResult&) {
@@ -150,7 +151,7 @@ void VocabLibraryActivity::showDeleteConfirmation(const int index) {
 void VocabLibraryActivity::deleteBook(const int index) {
   const auto& books = VOCAB_BOOKS.getBooks();
   if (index < 0 || index >= static_cast<int>(books.size())) return;
-  const int id = books[index].id;
+  const int id = books[storageIndexForRow(index)].id;
   VocabWordFile::remove(id);
   VOCAB_BOOKS.deleteBook(id);
   rebuildRowItems();
@@ -198,7 +199,7 @@ void VocabLibraryActivity::promptDictionaryForNewBook(std::string title) {
                    [this, title = std::move(title), names](int idx) {
                      VOCAB_BOOKS.addBook(title, names[idx]);
                      rebuildRowItems();
-                     nav.selected = VOCAB_BOOKS.getCount();  // ring position of the new last row
+                     nav.selected = 1;  // ring position of the newest book, now displayed on top
                      requestUpdate();
                    });
   requestUpdate();
