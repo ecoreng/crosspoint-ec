@@ -179,7 +179,8 @@ void VocabWordListActivity::lookupWord(const std::string& word) {
 
   startActivityForResult(
       makeUniqueNoThrow<DictionaryDefinitionActivity>(renderer, mappedInput, std::move(headword),
-                                                       std::move(definition), dict.definitionsAreHtml()),
+                                                       std::move(definition), dictionaryFolder,
+                                                       dict.definitionsAreHtml()),
       [this](const ActivityResult&) { requestUpdate(); });
 }
 
