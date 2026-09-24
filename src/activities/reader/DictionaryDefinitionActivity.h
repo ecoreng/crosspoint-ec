@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "activities/Activity.h"
+#include "components/OptionPopup.h"
 #include "util/ButtonNavigator.h"
 
 // Paged viewer for one dictionary definition. HTML definitions are laid out
@@ -23,16 +24,25 @@
 // Back always returns directly to whatever opened the first definition, and
 // only one definition's Pages are ever resident at a time. The plain-text
 // fallback has no per-word layout data, so it stays view-only.
+//
+// Long-pressing Confirm saves the currently displayed headword into a vocab
+// book (see saveToVocabulary()): the book it was opened from when known
+// (originBookId), otherwise a picker over the existing books.
 class DictionaryDefinitionActivity final : public Activity {
  public:
+  // originBookId is the vocab book this definition was opened from (0 = none,
+  // e.g. opened from the reader), used by saveToVocabulary() to skip the
+  // book picker. It stays fixed for this activity's whole lifetime --
+  // showDefinition() swaps the word being viewed, not where "save" goes.
   explicit DictionaryDefinitionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string headword,
                                         std::string definition, std::string dictionaryFolder,
-                                        bool htmlDefinition = false)
+                                        bool htmlDefinition = false, int originBookId = 0)
       : Activity("DictionaryDefinition", renderer, mappedInput),
         headword(std::move(headword)),
         definition(std::move(definition)),
         dictionaryFolder(std::move(dictionaryFolder)),
-        htmlDefinition(htmlDefinition) {}
+        htmlDefinition(htmlDefinition),
+        originBookId(originBookId) {}
 
   void onEnter() override;
   void onExit() override;
@@ -74,6 +84,12 @@ class DictionaryDefinitionActivity final : public Activity {
   // Swaps in a cross-referenced word's definition in place of the current
   // one (same activity, same stack depth) -- see the class comment.
   void showDefinition(std::string newHeadword, std::string newDefinition, bool newHtmlDefinition);
+  // Saves the current headword into a vocab book: originBookId when known,
+  // the sole existing book when there's exactly one, otherwise a picker.
+  void saveToVocabulary();
+  // Adds headword to bookId and shows an OK-dismiss result popup (added, or
+  // already there -- VocabWordFile::addWord dedupes case-insensitively).
+  void addWordToBook(int bookId);
 
   // Not const: showDefinition() swaps these in place for a chained lookup.
   std::string headword;
@@ -84,6 +100,7 @@ class DictionaryDefinitionActivity final : public Activity {
   // the global setting currently points to.
   const std::string dictionaryFolder;
   bool htmlDefinition;
+  const int originBookId;
   // Styled path: reader-identical Pages laid out from the HTML definition.
   // Empty means the plain-text span path below is active.
   std::vector<std::unique_ptr<Page>> pages;
@@ -92,4 +109,5 @@ class DictionaryDefinitionActivity final : public Activity {
   int totalPages = 1;
   int linesPerPage = 1;
   ButtonNavigator buttonNavigator;
+  OptionPopup optionPopup;
 };

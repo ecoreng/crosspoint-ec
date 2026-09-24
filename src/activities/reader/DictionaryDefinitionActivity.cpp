@@ -10,10 +10,12 @@
 
 #include "CrossPointSettings.h"
 #include "DictionaryWordSelectActivity.h"
+#include "VocabBooksStore.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "util/DictHtmlPages.h"
 #include "util/HtmlToPlainText.h"
+#include "util/VocabWordFile.h"
 
 namespace {
 
@@ -30,6 +32,10 @@ constexpr int SIDE_PADDING = 20;
 // reader and word-select. Bigger definitions take the span-based plain-text
 // path, which holds no per-page copies.
 constexpr size_t MAX_STYLED_HTML_BYTES = 16 * 1024;
+
+// Matches ENTER_ACTIONS_MODE_MS elsewhere (e.g. VocabWordListActivity): long
+// enough not to fire on an ordinary Confirm tap.
+constexpr int SAVE_TO_VOCAB_HOLD_MS = 700;
 
 }  // namespace
 
@@ -251,7 +257,46 @@ void DictionaryDefinitionActivity::showDefinition(std::string newHeadword, std::
   loadDefinition();
 }
 
+void DictionaryDefinitionActivity::addWordToBook(const int bookId) {
+  const bool added = VocabWordFile::addWord(bookId, headword);
+  optionPopup.show(added ? StrId::STR_VOCAB_WORD_ADDED : StrId::STR_VOCAB_WORD_ALREADY_ADDED,
+                   std::vector<std::string>{tr(STR_OK_BUTTON)}, 0, [](int) {});
+  requestUpdate();
+}
+
+void DictionaryDefinitionActivity::saveToVocabulary() {
+  if (optionPopup.isActive()) return;
+  if (originBookId != 0) {
+    addWordToBook(originBookId);
+    return;
+  }
+
+  const std::vector<VocabBook> books = VOCAB_BOOKS.getBooks();
+  if (books.empty()) {
+    optionPopup.show(StrId::STR_VOCAB_NO_BOOKS, std::vector<std::string>{tr(STR_OK_BUTTON)}, 0, [](int) {});
+    requestUpdate();
+    return;
+  }
+  if (books.size() == 1) {
+    addWordToBook(books[0].id);
+    return;
+  }
+
+  std::vector<std::string> titles;
+  titles.reserve(books.size());
+  for (const auto& book : books) titles.push_back(book.title);
+  optionPopup.show(StrId::STR_SAVE_TO_VOCAB, titles, 0, [this, books](const int idx) {
+    if (idx >= 0 && idx < static_cast<int>(books.size())) addWordToBook(books[idx].id);
+  });
+  requestUpdate();
+}
+
 void DictionaryDefinitionActivity::loop() {
+  if (optionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
+  if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, SAVE_TO_VOCAB_HOLD_MS)) {
+    saveToVocabulary();
+    return;
+  }
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     finish();
     return;
@@ -322,6 +367,7 @@ void DictionaryDefinitionActivity::drawBody(const int fontId, const int x, const
 }
 
 void DictionaryDefinitionActivity::render(RenderLock&&) {
+  if (optionPopup.processRender(renderer, mappedInput)) return;
   renderer.clearScreen();
 
   const auto& metrics = UITheme::getInstance().getMetrics();
