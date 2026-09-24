@@ -53,7 +53,7 @@ void VocabWordListActivity::rebuildRowItems() {
 
   for (size_t i = 0; i < words.size(); i++) {
     fui::ListItem item;
-    item.label = words[i].c_str();
+    item.label = words[storageIndexForRow(static_cast<int>(i))].c_str();
     item.actionValue = static_cast<int16_t>(i);
     rowItems_.push_back(item);
   }
@@ -62,7 +62,7 @@ void VocabWordListActivity::rebuildRowItems() {
 void VocabWordListActivity::activateIndex(const int index) {
   if (optionPopup.isActive()) return;
   app.clearTapFlash();
-  lookupWord(words[index]);
+  lookupWord(words[storageIndexForRow(index)]);
 }
 
 void VocabWordListActivity::onRowAction(const fui::ActionEvent& event) {
@@ -135,7 +135,7 @@ void VocabWordListActivity::showDeleteConfirmation(const int index) {
 
 void VocabWordListActivity::deleteWord(const int index) {
   if (index < 0 || index >= static_cast<int>(words.size())) return;
-  words.erase(words.begin() + index);
+  words.erase(words.begin() + storageIndexForRow(index));
   if (!VocabWordFile::save(bookId, words)) {
     LOG_ERR("VOCAB", "Failed to save word list after delete");
   }
