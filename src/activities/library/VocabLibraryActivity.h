@@ -5,9 +5,12 @@
 #include "components/OptionPopup.h"
 
 // Lists declared vocabulary books (title + assigned dictionary). Selecting one
-// opens its word list (VocabWordListActivity); the last row adds a new book:
-// title via KeyboardEntryActivity, then dictionary via OptionPopup over
-// DictionaryRegistry::discover().
+// opens its word list (VocabWordListActivity). "Add book" is a fixed button
+// pinned above the list (title via KeyboardEntryActivity, then dictionary via
+// OptionPopup over DictionaryRegistry::discover()), not a row, so it never
+// scrolls out of reach as the book list grows. Navigation is a ring: position
+// 0 is the Add book button, 1..N are the book rows (see VocabWordListActivity
+// for the same pattern, and UiTabListActivity for the tab-bar variant).
 class VocabLibraryActivity final : public UiListActivity {
  public:
   explicit VocabLibraryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
@@ -18,10 +21,15 @@ class VocabLibraryActivity final : public UiListActivity {
   void render(RenderLock&&) override;
 
  private:
+  // Add book button action; ACTION_ROW/ACTION_USER are base-owned.
+  static constexpr freeink::ui::ActionId ACTION_ADD_BOOK = ACTION_USER;
+
   int listCount() const override { return getItemCount(); }
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
+  void onRowAction(const freeink::ui::ActionEvent& event) override;
   void onRowLongPress(int index) override;
+  void navigateButtons() override;
   bool handleCustomInput() override;
   bool handleButtons() override;
   const char* headerTitle() const override;
@@ -29,6 +37,7 @@ class VocabLibraryActivity final : public UiListActivity {
   int getItemCount() const;
   void rebuildRowItems();
   void startAddBook();
+  static void addBookActionTrampoline(const freeink::ui::ActionEvent& event, void* user);
   void promptDictionaryForNewBook(std::string title);
   void showDeleteConfirmation(int index);
   void deleteBook(int index);
