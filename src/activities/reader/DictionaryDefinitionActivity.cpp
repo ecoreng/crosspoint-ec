@@ -256,7 +256,13 @@ void DictionaryDefinitionActivity::loop() {
     finish();
     return;
   }
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+  // Confirm covers button boards; homeButtonAction() covers the reader's own
+  // trigger for entering word selection (Home long-press, or a bottom-edge
+  // swipe on boards with no physical Home key) -- same gesture, same
+  // SETTINGS.homeButton*Action mapping, so this screen doesn't need its own
+  // separate one to learn.
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
+      mappedInput.homeButtonAction() == HomeButtonAction::Dictionary) {
     openWordSelect();
     return;
   }
