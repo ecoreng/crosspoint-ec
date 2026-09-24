@@ -179,11 +179,25 @@ void DictionaryWordSelectActivity::performLookup() {
 
   if (found) {
     popup = Popup::None;
-    startActivityForResult(
-        std::make_unique<DictionaryDefinitionActivity>(renderer, mappedInput, std::move(headword),
-                                                       std::move(definition), dictionaryFolder,
-                                                       dict.definitionsAreHtml()),
-        [this](const ActivityResult&) { requestUpdate(); });
+    if (ownedPage) {
+      // Reader flow: this activity owns its page, so it stays on the stack
+      // (Back returns to word-select over the same reader page) while a new
+      // definition view is pushed on top.
+      startActivityForResult(
+          std::make_unique<DictionaryDefinitionActivity>(renderer, mappedInput, std::move(headword),
+                                                         std::move(definition), dictionaryFolder,
+                                                         dict.definitionsAreHtml()),
+          [this](const ActivityResult&) { requestUpdate(); });
+      return;
+    }
+    // Definition-chaining flow: hand the pick back to the
+    // DictionaryDefinitionActivity that lent us its page instead of
+    // stacking a new view on top of it -- it swaps its own content in
+    // place, so chasing several cross-references in a row never grows the
+    // activity stack (each hop stays a single Back away from wherever the
+    // chain started) or holds more than one definition's Pages in memory.
+    setResult(DictionaryLookupResult{std::move(headword), std::move(definition), dict.definitionsAreHtml()});
+    finish();
     return;
   }
   // Name the failure: a genuine miss is "Not found"; a word that WAS found but

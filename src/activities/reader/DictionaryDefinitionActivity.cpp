@@ -35,6 +35,11 @@ constexpr size_t MAX_STYLED_HTML_BYTES = 16 * 1024;
 
 void DictionaryDefinitionActivity::onEnter() {
   Activity::onEnter();
+  loadDefinition();
+  requestUpdate();
+}
+
+void DictionaryDefinitionActivity::loadDefinition() {
   // Normalize StarDict multi-type separators so the wrap loop and the
   // C-string font APIs below both see the whole definition.
   std::replace(definition.begin(), definition.end(), '\0', '\n');
@@ -42,7 +47,6 @@ void DictionaryDefinitionActivity::onEnter() {
     definition = htmlToPlainText(definition);
     wrapText();
   }
-  requestUpdate();
 }
 
 void DictionaryDefinitionActivity::onExit() {
@@ -223,7 +227,28 @@ void DictionaryDefinitionActivity::openWordSelect() {
   startActivityForResult(
       std::make_unique<DictionaryWordSelectActivity>(renderer, mappedInput, pages[currentPage].get(),
                                                       dictionaryFolder, origin.x, origin.y),
-      [this](const ActivityResult&) { requestUpdate(); });
+      [this](const ActivityResult& result) {
+        if (const auto* lookup = std::get_if<DictionaryLookupResult>(&result.data)) {
+          showDefinition(lookup->headword, lookup->definition, lookup->isHtml);
+        }
+        requestUpdate(true);
+      });
+}
+
+// Swaps a cross-referenced word's definition into this same activity instead
+// of word-select stacking a new one on top (see class comment): drops the
+// current Pages/lines first so only one definition is ever resident, then
+// lays the new one out exactly like onEnter() would.
+void DictionaryDefinitionActivity::showDefinition(std::string newHeadword, std::string newDefinition,
+                                                  const bool newHtmlDefinition) {
+  headword = std::move(newHeadword);
+  definition = std::move(newDefinition);
+  htmlDefinition = newHtmlDefinition;
+  pages.clear();
+  lines.clear();
+  currentPage = 0;
+  totalPages = 1;
+  loadDefinition();
 }
 
 void DictionaryDefinitionActivity::loop() {
