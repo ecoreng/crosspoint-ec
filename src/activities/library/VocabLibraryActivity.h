@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 
+#include "VocabBooksStore.h"
 #include "activities/UiListActivity.h"
 #include "components/OptionPopup.h"
 
@@ -41,6 +42,11 @@ class VocabLibraryActivity final : public UiListActivity {
   void promptDictionaryForNewBook(std::string title);
   void showDeleteConfirmation(int index);
   void deleteBook(int index);
+  // Rows display newest-first (index 0 = most recently added) so a new book
+  // stays visible under the pinned Add book button without scrolling; the
+  // store's book list itself stays in addition order. Converts a display row
+  // index to the matching index into VOCAB_BOOKS.getBooks().
+  int storageIndexForRow(int rowIndex) const { return VOCAB_BOOKS.getCount() - 1 - rowIndex; }
 
   std::vector<freeink::ui::ListItem> rowItems_;
   OptionPopup optionPopup;
