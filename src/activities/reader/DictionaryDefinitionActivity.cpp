@@ -293,7 +293,16 @@ void DictionaryDefinitionActivity::saveToVocabulary() {
 
 void DictionaryDefinitionActivity::loop() {
   if (optionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
-  if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, SAVE_TO_VOCAB_HOLD_MS)) {
+  int lx = 0;
+  int ly = 0;
+  // Button boards: long-press the physical Confirm button. Touch boards (no
+  // physical Confirm at all on e.g. X4 Pro -- Back/Confirm there only exist
+  // via the Home key/hints) get the SDK's own long-press classifier instead,
+  // the same "hold to act" primitive UiAppHelpers uses for touch long-press
+  // elsewhere. Anywhere on screen: distinct event from the tap-based page-turn
+  // zones below, so it can't collide with them.
+  if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, SAVE_TO_VOCAB_HOLD_MS) ||
+      mappedInput.wasScreenLongPress(lx, ly)) {
     saveToVocabulary();
     return;
   }
