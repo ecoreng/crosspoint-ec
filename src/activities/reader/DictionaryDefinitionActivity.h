@@ -11,6 +11,8 @@
 #include "components/OptionPopup.h"
 #include "util/ButtonNavigator.h"
 
+struct Rect;
+
 // Paged viewer for one dictionary definition. HTML definitions are laid out
 // through the EPUB chapter parser into styled Pages; anything else (plain
 // text, or HTML too damaged to parse) is word-wrapped once on entry and each
@@ -25,15 +27,20 @@
 // only one definition's Pages are ever resident at a time. The plain-text
 // fallback has no per-word layout data, so it stays view-only.
 //
-// Long-pressing Confirm saves the currently displayed headword into a vocab
-// book (see saveToVocabulary()): the book it was opened from when known
-// (originBookId), otherwise a picker over the existing books.
+// Saves the currently displayed headword into a vocab book (see
+// saveToVocabulary()): a "+Vocab" button in the header corner on touch
+// boards, long-press Confirm on button boards (which have no room for a
+// fifth on-screen affordance alongside Back/Lookup/prev/next). Either way it
+// opens VocabLibraryActivity in selection mode -- pre-selecting the book this
+// definition was opened from (originBookId) when known, but always requiring
+// an explicit pick (or a freshly created book) rather than saving silently.
 class DictionaryDefinitionActivity final : public Activity {
  public:
   // originBookId is the vocab book this definition was opened from (0 = none,
-  // e.g. opened from the reader), used by saveToVocabulary() to skip the
-  // book picker. It stays fixed for this activity's whole lifetime --
-  // showDefinition() swaps the word being viewed, not where "save" goes.
+  // e.g. opened from the reader), used to pre-select that book in
+  // saveToVocabulary()'s picker. It stays fixed for this activity's whole
+  // lifetime -- showDefinition() swaps the word being viewed, not where
+  // "save" defaults to.
   explicit DictionaryDefinitionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string headword,
                                         std::string definition, std::string dictionaryFolder,
                                         bool htmlDefinition = false, int originBookId = 0)
@@ -73,6 +80,8 @@ class DictionaryDefinitionActivity final : public Activity {
 
   BodyArea bodyArea() const;
   BodyOrigin bodyOrigin() const;
+  // Screen rect of the touch-only "+Vocab" header button.
+  Rect vocabButtonRect() const;
   // Normalizes `definition`, lays it out (layoutHtmlPages() or wrapText()),
   // and resets the page counter. Shared by onEnter() and showDefinition().
   void loadDefinition();
@@ -84,8 +93,9 @@ class DictionaryDefinitionActivity final : public Activity {
   // Swaps in a cross-referenced word's definition in place of the current
   // one (same activity, same stack depth) -- see the class comment.
   void showDefinition(std::string newHeadword, std::string newDefinition, bool newHtmlDefinition);
-  // Saves the current headword into a vocab book: originBookId when known,
-  // the sole existing book when there's exactly one, otherwise a picker.
+  // Opens VocabLibraryActivity in selection mode (pre-selecting originBookId
+  // when known) and saves the current headword into whichever book comes
+  // back.
   void saveToVocabulary();
   // Adds headword to bookId and shows an OK-dismiss result popup (added, or
   // already there -- VocabWordFile::addWord dedupes case-insensitively).

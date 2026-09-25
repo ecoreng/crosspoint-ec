@@ -12,9 +12,17 @@
 // scrolls out of reach as the book list grows. Navigation is a ring: position
 // 0 is the Add book button, 1..N are the book rows (see VocabWordListActivity
 // for the same pattern, and UiTabListActivity for the tab-bar variant).
+//
+// selectionMode repurposes this same screen as a book picker (e.g. for
+// DictionaryDefinitionActivity's "save word to vocabulary" flow): tapping a
+// book, or finishing the add-book flow, returns its id via VocabBookResult
+// and finishes instead of opening VocabWordListActivity. initialBookId, when
+// non-zero, pre-selects that book on entry (still requires an explicit pick
+// -- this is a convenience default, not an auto-save).
 class VocabLibraryActivity final : public UiListActivity {
  public:
-  explicit VocabLibraryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
+  explicit VocabLibraryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool selectionMode = false,
+                                int initialBookId = 0);
 
   void onEnter() override;
   void onExit() override;
@@ -47,7 +55,11 @@ class VocabLibraryActivity final : public UiListActivity {
   // store's book list itself stays in addition order. Converts a display row
   // index to the matching index into VOCAB_BOOKS.getBooks().
   int storageIndexForRow(int rowIndex) const { return VOCAB_BOOKS.getCount() - 1 - rowIndex; }
+  // Ring position (1..N) of bookId's row, or 0 (the Add book button) if not found.
+  int ringPositionForBook(int bookId) const;
 
+  const bool selectionMode;
+  const int initialBookId;
   std::vector<freeink::ui::ListItem> rowItems_;
   OptionPopup optionPopup;
   // See VocabWordListActivity: picks up SETTINGS.orientation changes made via
