@@ -180,7 +180,7 @@ void VocabWordListActivity::lookupWord(const std::string& word) {
   startActivityForResult(
       makeUniqueNoThrow<DictionaryDefinitionActivity>(renderer, mappedInput, std::move(headword),
                                                        std::move(definition), dictionaryFolder,
-                                                       dict.definitionsAreHtml()),
+                                                       dict.definitionsAreHtml(), bookId),
       [this](const ActivityResult&) { requestUpdate(); });
 }
 

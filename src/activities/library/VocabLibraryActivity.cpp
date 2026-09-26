@@ -19,13 +19,16 @@ namespace {
 constexpr int ENTER_ACTIONS_MODE_MS = 700;
 }  // namespace
 
-VocabLibraryActivity::VocabLibraryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-    : UiListActivity("VocabLibrary", renderer, mappedInput, /*wantsTouchLongPress=*/true) {}
+VocabLibraryActivity::VocabLibraryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                                           const bool selectionMode, const int initialBookId)
+    : UiListActivity("VocabLibrary", renderer, mappedInput, /*wantsTouchLongPress=*/true),
+      selectionMode(selectionMode),
+      initialBookId(initialBookId) {}
 
 void VocabLibraryActivity::onEnter() {
   UiListActivity::onEnter();
   VOCAB_BOOKS.loadFromFile();
-  nav.selected = 0;
+  nav.selected = selectionMode && initialBookId != 0 ? ringPositionForBook(initialBookId) : 0;
   rebuildRowItems();
   appliedOrientation = SETTINGS.orientation;
   ReaderUtils::applyOrientation(renderer, appliedOrientation);
@@ -43,8 +46,13 @@ void VocabLibraryActivity::loop() {
 
 void VocabLibraryActivity::onExit() {
   // See VocabWordListActivity::onExit: restore Portrait so Home doesn't
-  // inherit a rotation it was never exercised in.
-  ReaderUtils::applyOrientation(renderer, CrossPointSettings::ORIENTATION::PORTRAIT);
+  // inherit a rotation it was never exercised in. Selection mode returns to
+  // a picker's caller (e.g. DictionaryDefinitionActivity), which may be
+  // mid-reading in a non-Portrait orientation -- forcing Portrait there would
+  // fight the screen it's about to resume rather than protect Home.
+  if (!selectionMode) {
+    ReaderUtils::applyOrientation(renderer, CrossPointSettings::ORIENTATION::PORTRAIT);
+  }
   UiListActivity::onExit();
 }
 
@@ -65,7 +73,20 @@ void VocabLibraryActivity::rebuildRowItems() {
   }
 }
 
-const char* VocabLibraryActivity::headerTitle() const { return tr(STR_VOCABULARY); }
+const char* VocabLibraryActivity::headerTitle() const {
+  return selectionMode ? tr(STR_SAVE_TO_VOCAB) : tr(STR_VOCABULARY);
+}
+
+int VocabLibraryActivity::ringPositionForBook(const int bookId) const {
+  const auto& books = VOCAB_BOOKS.getBooks();
+  for (size_t storageIndex = 0; storageIndex < books.size(); storageIndex++) {
+    if (books[storageIndex].id == bookId) {
+      const int rowIndex = static_cast<int>(books.size()) - 1 - static_cast<int>(storageIndex);
+      return rowIndex + 1;
+    }
+  }
+  return 0;
+}
 
 bool VocabLibraryActivity::handleCustomInput() { return optionPopup.handleInput(mappedInput, [this] { requestUpdate(); }); }
 
@@ -94,6 +115,11 @@ void VocabLibraryActivity::activateIndex(const int index) {
   app.clearTapFlash();
 
   const VocabBook& book = VOCAB_BOOKS.getBooks()[storageIndexForRow(index)];
+  if (selectionMode) {
+    setResult(VocabBookResult{book.id});
+    finish();
+    return;
+  }
   startActivityForResult(
       makeUniqueNoThrow<VocabWordListActivity>(renderer, mappedInput, book.id, book.title, book.dictionaryFolder),
       [this](const ActivityResult&) {
@@ -197,7 +223,12 @@ void VocabLibraryActivity::promptDictionaryForNewBook(std::string title) {
 
   optionPopup.show(StrId::STR_SELECT_DICTIONARY, names, 0,
                    [this, title = std::move(title), names](int idx) {
-                     VOCAB_BOOKS.addBook(title, names[idx]);
+                     const int newId = VOCAB_BOOKS.addBook(title, names[idx]);
+                     if (selectionMode) {
+                       setResult(VocabBookResult{newId});
+                       finish();
+                       return;
+                     }
                      rebuildRowItems();
                      nav.selected = 1;  // ring position of the newest book, now displayed on top
                      requestUpdate();

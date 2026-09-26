@@ -77,10 +77,17 @@ struct DictionaryLookupResult {
   bool isHtml = false;
 };
 
+// A vocab book chosen from VocabLibraryActivity's selection mode (see that
+// class): the id of the book the caller should save into, existing or
+// freshly created.
+struct VocabBookResult {
+  int bookId = 0;
+};
+
 using ResultVariant =
     std::variant<std::monostate, WifiResult, KeyboardResult, MenuResult, ChapterResult, PercentResult, IntervalResult,
                  PageResult, ProgressChangeResult, NetworkModeResult, FootnoteResult, FilePathResult,
-                 DictionaryLookupResult>;
+                 DictionaryLookupResult, VocabBookResult>;
 
 struct ActivityResult {
   bool isCancelled = false;

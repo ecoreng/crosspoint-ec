@@ -3,6 +3,8 @@
 #include <FontCacheManager.h>
 #include <GfxRenderer.h>
 #include <I18n.h>
+#include <Logging.h>
+#include <Memory.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -10,10 +12,12 @@
 
 #include "CrossPointSettings.h"
 #include "DictionaryWordSelectActivity.h"
+#include "activities/library/VocabLibraryActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "util/DictHtmlPages.h"
 #include "util/HtmlToPlainText.h"
+#include "util/VocabWordFile.h"
 
 namespace {
 
@@ -30,6 +34,10 @@ constexpr int SIDE_PADDING = 20;
 // reader and word-select. Bigger definitions take the span-based plain-text
 // path, which holds no per-page copies.
 constexpr size_t MAX_STYLED_HTML_BYTES = 16 * 1024;
+
+// Matches ENTER_ACTIONS_MODE_MS elsewhere (e.g. VocabWordListActivity): long
+// enough not to fire on an ordinary Confirm tap.
+constexpr int SAVE_TO_VOCAB_HOLD_MS = 700;
 
 }  // namespace
 
@@ -82,6 +90,28 @@ DictionaryDefinitionActivity::BodyOrigin DictionaryDefinitionActivity::bodyOrigi
   const int contentX = isLandscapeCw ? hintGutterWidth : 0;
   const int contentY = isInverted ? metrics.buttonHintsHeight : 0;
   return {contentX + SIDE_PADDING, contentY + metrics.topPadding + metrics.headerHeight};
+}
+
+// Header-corner "+Vocab" button, touch boards only (see loop()). Right-aligned
+// to the same margin the page counter uses; vertically centered on the
+// headword's baseline.
+Rect DictionaryDefinitionActivity::vocabButtonRect() const {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const auto orientation = renderer.getOrientation();
+  const bool isLandscapeCw = orientation == GfxRenderer::Orientation::LandscapeClockwise;
+  const bool isLandscape = isLandscapeCw || orientation == GfxRenderer::Orientation::LandscapeCounterClockwise;
+  const int hintGutterWidth = isLandscape ? metrics.sideButtonHintsWidth : 0;
+  const int contentWidth = renderer.getScreenWidth() - hintGutterWidth;
+  const BodyOrigin origin = bodyOrigin();
+
+  constexpr int PADDING_X = 10;
+  constexpr int PADDING_Y = 6;
+  const int textWidth = renderer.getTextWidth(UI_10_FONT_ID, tr(STR_SAVE_TO_VOCAB_BUTTON));
+  const int width = textWidth + 2 * PADDING_X;
+  const int height = renderer.getLineHeight(UI_10_FONT_ID) + 2 * PADDING_Y;
+  const int right = origin.x + contentWidth - 2 * SIDE_PADDING;
+  const int headerY = origin.y - metrics.headerHeight + 10;
+  return Rect(right - width, headerY - PADDING_Y, width, height);
 }
 
 // Styled path: lay the HTML definition out through the EPUB chapter parser
@@ -257,7 +287,45 @@ void DictionaryDefinitionActivity::showDefinition(std::string newHeadword, std::
   loadDefinition();
 }
 
+void DictionaryDefinitionActivity::addWordToBook(const int bookId) {
+  const bool added = VocabWordFile::addWord(bookId, headword);
+  // The picker (VocabLibraryActivity) just popped, so the framebuffer still
+  // holds its final frame -- force this screen's own content to paint before
+  // the popup overlays it, or the popup would show over stale content
+  // (OptionPopup::processRender draws over whatever is already there).
+  requestUpdateAndWait();
+  optionPopup.show(added ? StrId::STR_VOCAB_WORD_ADDED : StrId::STR_VOCAB_WORD_ALREADY_ADDED,
+                   std::vector<std::string>{tr(STR_OK_BUTTON)}, 0, [](int) {});
+  requestUpdate();
+}
+
+void DictionaryDefinitionActivity::saveToVocabulary() {
+  auto picker = makeUniqueNoThrow<VocabLibraryActivity>(renderer, mappedInput, /*selectionMode=*/true, originBookId);
+  if (!picker) {
+    LOG_ERR("DICT", "OOM: vocab book picker");
+    return;
+  }
+  startActivityForResult(std::move(picker), [this](const ActivityResult& result) {
+    if (const auto* picked = std::get_if<VocabBookResult>(&result.data)) {
+      addWordToBook(picked->bookId);
+      return;
+    }
+    requestUpdate();
+  });
+}
+
 void DictionaryDefinitionActivity::loop() {
+  if (optionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
+  // Button boards only: no room for a fifth on-screen affordance next to
+  // Back/Lookup/prev/next, so save lives on a long-press of the button
+  // already used for "select". Touch boards (X4 Pro and friends have no
+  // physical Confirm button at all -- Back/Confirm only exist there via the
+  // Home key/hints, so this never fires) get the "+Vocab" header button
+  // instead, hit-tested below alongside the page-turn tap zones.
+  if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, SAVE_TO_VOCAB_HOLD_MS)) {
+    saveToVocabulary();
+    return;
+  }
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     finish();
     return;
@@ -274,10 +342,18 @@ void DictionaryDefinitionActivity::loop() {
   }
 
   // Same tap zones as the reader page turns: left third = previous page,
-  // the rest = next. Back is the usual left-edge swipe.
+  // the rest = next. Back is the usual left-edge swipe. The "+Vocab" header
+  // button is checked first so it isn't swallowed by the "next page" zone.
   int tx = 0;
   int ty = 0;
   if (mappedInput.wasScreenTapped(tx, ty)) {
+    if (mappedInput.hasTouch()) {
+      const Rect btn = vocabButtonRect();
+      if (tx >= btn.x && tx < btn.x + btn.width && ty >= btn.y && ty < btn.y + btn.height) {
+        saveToVocabulary();
+        return;
+      }
+    }
     if (tx < renderer.getScreenWidth() / 3) {
       if (currentPage > 0) {
         currentPage--;
@@ -328,6 +404,7 @@ void DictionaryDefinitionActivity::drawBody(const int fontId, const int x, const
 }
 
 void DictionaryDefinitionActivity::render(RenderLock&&) {
+  if (optionPopup.processRender(renderer, mappedInput)) return;
   renderer.clearScreen();
 
   const auto& metrics = UITheme::getInstance().getMetrics();
@@ -338,14 +415,25 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
   const int contentWidth = renderer.getScreenWidth() - hintGutterWidth;
   const BodyOrigin origin = bodyOrigin();
 
-  // Header: matched headword left, page counter right.
+  // Header: headword left; "+Vocab" button (touch boards) and/or page counter
+  // right, the counter sitting left of the button when both are present.
   const int headerY = origin.y - metrics.headerHeight + 10;
   renderer.drawText(UI_12_FONT_ID, origin.x, headerY, headword.c_str(), true, EpdFontFamily::BOLD);
+
+  int rightEdge = origin.x + contentWidth - 2 * SIDE_PADDING;
+  if (mappedInput.hasTouch()) {
+    const Rect btn = vocabButtonRect();
+    const char* label = tr(STR_SAVE_TO_VOCAB_BUTTON);
+    renderer.drawRect(btn.x, btn.y, btn.width, btn.height, true);
+    const int labelWidth = renderer.getTextWidth(UI_10_FONT_ID, label);
+    renderer.drawText(UI_10_FONT_ID, btn.x + (btn.width - labelWidth) / 2, headerY, label);
+    rightEdge = btn.x - 12;
+  }
   if (totalPages > 1) {
     char counter[16];
     snprintf(counter, sizeof(counter), "%d/%d", currentPage + 1, totalPages);
     const int counterWidth = renderer.getTextWidth(UI_10_FONT_ID, counter);
-    renderer.drawText(UI_10_FONT_ID, origin.x + contentWidth - 2 * SIDE_PADDING - counterWidth, headerY, counter);
+    renderer.drawText(UI_10_FONT_ID, rightEdge - counterWidth, headerY, counter);
   }
 
   // Body: two-pass draw inside a prewarm scope (same pattern as the reader's
