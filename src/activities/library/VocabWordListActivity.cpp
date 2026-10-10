@@ -84,8 +84,8 @@ void VocabWordListActivity::addWordActionTrampoline(const fui::ActionEvent&, voi
 
 void VocabWordListActivity::navigateButtons() {
   const int ringSize = static_cast<int>(words.size()) + 1;
-  buttonNavigator.onNextRelease([this, ringSize] { moveSelectionTo(ButtonNavigator::nextIndex(nav.selected, ringSize)); });
-  buttonNavigator.onPreviousRelease(
+  buttonNavigator.onNextPress([this, ringSize] { moveSelectionTo(ButtonNavigator::nextIndex(nav.selected, ringSize)); });
+  buttonNavigator.onPreviousPress(
       [this, ringSize] { moveSelectionTo(ButtonNavigator::previousIndex(nav.selected, ringSize)); });
   buttonNavigator.onNextContinuous(
       [this, ringSize] { moveSelectionTo(ButtonNavigator::nextPageIndex(nav.selected, ringSize, nav.inputPageRows())); });

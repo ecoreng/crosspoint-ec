@@ -147,8 +147,8 @@ void VocabLibraryActivity::addBookActionTrampoline(const fui::ActionEvent&, void
 
 void VocabLibraryActivity::navigateButtons() {
   const int ringSize = VOCAB_BOOKS.getCount() + 1;
-  buttonNavigator.onNextRelease([this, ringSize] { moveSelectionTo(ButtonNavigator::nextIndex(nav.selected, ringSize)); });
-  buttonNavigator.onPreviousRelease(
+  buttonNavigator.onNextPress([this, ringSize] { moveSelectionTo(ButtonNavigator::nextIndex(nav.selected, ringSize)); });
+  buttonNavigator.onPreviousPress(
       [this, ringSize] { moveSelectionTo(ButtonNavigator::previousIndex(nav.selected, ringSize)); });
   buttonNavigator.onNextContinuous(
       [this, ringSize] { moveSelectionTo(ButtonNavigator::nextPageIndex(nav.selected, ringSize, nav.inputPageRows())); });
