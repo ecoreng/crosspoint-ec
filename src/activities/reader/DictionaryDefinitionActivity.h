@@ -99,6 +99,9 @@ class DictionaryDefinitionActivity final : public Activity {
   // when known) and saves the current headword into whichever book comes
   // back.
   void saveToVocabulary();
+  // Only real dictionary lookups carry a dictionaryFolder; clipping and plugin
+  // text views don't, and a title there isn't a word to save.
+  bool canSaveToVocab() const { return !dictionaryFolder.empty(); }
   // Adds headword to bookId and shows an OK-dismiss result popup (added, or
   // already there -- VocabWordFile::addWord dedupes case-insensitively).
   void addWordToBook(int bookId);

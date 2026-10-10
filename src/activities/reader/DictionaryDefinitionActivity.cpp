@@ -331,7 +331,7 @@ void DictionaryDefinitionActivity::loop() {
   // physical Confirm button at all -- Back/Confirm only exist there via the
   // Home key/hints, so this never fires) get the "+Vocab" header button
   // instead, hit-tested below alongside the page-turn tap zones.
-  if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, SAVE_TO_VOCAB_HOLD_MS)) {
+  if (canSaveToVocab() && mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, SAVE_TO_VOCAB_HOLD_MS)) {
     saveToVocabulary();
     return;
   }
@@ -356,7 +356,7 @@ void DictionaryDefinitionActivity::loop() {
   int tx = 0;
   int ty = 0;
   if (mappedInput.wasScreenTapped(tx, ty)) {
-    if (mappedInput.hasTouch()) {
+    if (canSaveToVocab() && mappedInput.hasTouch()) {
       const Rect btn = vocabButtonRect();
       if (tx >= btn.x && tx < btn.x + btn.width && ty >= btn.y && ty < btn.y + btn.height) {
         saveToVocabulary();
@@ -432,7 +432,7 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
   // and the page counter moves left of it (drawn here, not by the header).
   char counter[16] = {};
   if (totalPages > 1) snprintf(counter, sizeof(counter), "%d/%d", currentPage + 1, totalPages);
-  const bool showVocabButton = mappedInput.hasTouch();
+  const bool showVocabButton = canSaveToVocab() && mappedInput.hasTouch();
   GUI.drawHeader(renderer, Rect{contentX, contentY + metrics.topPadding, contentWidth, metrics.headerHeight},
                  headword.c_str(), (!showVocabButton && counter[0]) ? counter : nullptr);
   if (showVocabButton) {
