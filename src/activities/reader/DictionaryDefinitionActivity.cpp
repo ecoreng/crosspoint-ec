@@ -12,9 +12,9 @@
 
 #include "CrossPointSettings.h"
 #include "DictionaryWordSelectActivity.h"
+#include "HapticFeedback.h"
 #include "activities/library/VocabLibraryActivity.h"
 #include "components/UITheme.h"
-#include "fontIds.h"
 #include "util/DictHtmlPages.h"
 #include "util/HtmlToPlainText.h"
 #include "util/VocabWordFile.h"
@@ -24,9 +24,7 @@ namespace {
 // Longest measurable/drawable span. Wrapped lines stay under the screen width
 // (far below this); only pathological unbreakable tokens are split at this cap.
 constexpr size_t MAX_LINE_BYTES = 191;
-
-// Body text left/right inset, matching the reader's default feel.
-constexpr int SIDE_PADDING = 20;
+constexpr float PLAIN_TEXT_LINE_SPACING = 1.5f;
 
 // Styled-path ceiling: the laid-out Pages keep the whole definition resident
 // (TextBlock arenas ≈ text + ~7 bytes/word plus per-line objects), roughly
@@ -51,9 +49,20 @@ void DictionaryDefinitionActivity::loadDefinition() {
   // Normalize StarDict multi-type separators so the wrap loop and the
   // C-string font APIs below both see the whole definition.
   std::replace(definition.begin(), definition.end(), '\0', '\n');
-  if (!(htmlDefinition && definition.size() <= MAX_STYLED_HTML_BYTES && layoutHtmlPages())) {
-    definition = htmlToPlainText(definition);
+  const char* plainTextReason = nullptr;
+  if (!htmlDefinition) {
+    plainTextReason = "dictionary format is not HTML";
+  } else if (definition.size() > MAX_STYLED_HTML_BYTES) {
+    plainTextReason = "HTML exceeds 16 KiB limit";
+  } else if (!layoutHtmlPages()) {
+    plainTextReason = "HTML layout failed; see DHTML/EHP error";
+  }
+  if (plainTextReason) {
+    LOG_INF("DICT", "Plain-text definition: %s (bytes=%u)", plainTextReason, static_cast<unsigned>(definition.size()));
+    if (htmlDefinition) definition = htmlToPlainText(definition);
     wrapText();
+  } else {
+    LOG_INF("DICT", "Styled definition: %u pages", static_cast<unsigned>(pages.size()));
   }
 }
 
@@ -71,47 +80,44 @@ DictionaryDefinitionActivity::BodyArea DictionaryDefinitionActivity::bodyArea() 
                            orientation == GfxRenderer::Orientation::LandscapeCounterClockwise;
   const bool isInverted = orientation == GfxRenderer::Orientation::PortraitInverted;
   const int hintGutterWidth = isLandscape ? metrics.sideButtonHintsWidth : 0;
-  const int topArea = (isInverted ? metrics.buttonHintsHeight : 0) + metrics.topPadding + metrics.headerHeight;
-  const int bottomArea = metrics.buttonHintsHeight + metrics.verticalSpacing;
-  return {renderer.getScreenWidth() - hintGutterWidth - 2 * SIDE_PADDING,
-          renderer.getScreenHeight() - topArea - bottomArea};
+  int top, right, bottom, left;
+  renderer.getOrientedViewableTRBL(&top, &right, &bottom, &left);
+  const int contentLeft =
+      std::max(left, orientation == GfxRenderer::Orientation::LandscapeClockwise ? hintGutterWidth : 0);
+  const int contentRight =
+      std::max(right, orientation == GfxRenderer::Orientation::LandscapeCounterClockwise ? hintGutterWidth : 0);
+  const int x = contentLeft + metrics.contentSidePadding;
+  const int y = std::max(top, isInverted ? metrics.buttonHintsHeight : 0) + metrics.topPadding + metrics.headerHeight +
+                metrics.verticalSpacing;
+  const int bottomArea = std::max(bottom, metrics.buttonHintsHeight) + metrics.verticalSpacing;
+  return {x, y, renderer.getScreenWidth() - contentLeft - contentRight - 2 * metrics.contentSidePadding,
+          renderer.getScreenHeight() - y - bottomArea};
 }
 
-// Same orientation math as render()'s header/body layout; factored out so
-// openWordSelect() can hand DictionaryWordSelectActivity the exact margins
-// the currently displayed Page is rendered at.
+// Top-left of the body text, as render() draws it; openWordSelect() hands it
+// to DictionaryWordSelectActivity as the margins the displayed Page uses.
 DictionaryDefinitionActivity::BodyOrigin DictionaryDefinitionActivity::bodyOrigin() const {
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  const auto orientation = renderer.getOrientation();
-  const bool isLandscapeCw = orientation == GfxRenderer::Orientation::LandscapeClockwise;
-  const bool isLandscape = isLandscapeCw || orientation == GfxRenderer::Orientation::LandscapeCounterClockwise;
-  const bool isInverted = orientation == GfxRenderer::Orientation::PortraitInverted;
-  const int hintGutterWidth = isLandscape ? metrics.sideButtonHintsWidth : 0;
-  const int contentX = isLandscapeCw ? hintGutterWidth : 0;
-  const int contentY = isInverted ? metrics.buttonHintsHeight : 0;
-  return {contentX + SIDE_PADDING, contentY + metrics.topPadding + metrics.headerHeight};
+  const BodyArea body = bodyArea();
+  return {body.x, body.y};
 }
 
 // Header-corner "+Vocab" button, touch boards only (see loop()). Right-aligned
-// to the same margin the page counter uses; vertically centered on the
-// headword's baseline.
+// to the body's right edge, vertically centered on the header's content row
+// (the region below the battery/clock strip).
 Rect DictionaryDefinitionActivity::vocabButtonRect() const {
   const auto& metrics = UITheme::getInstance().getMetrics();
-  const auto orientation = renderer.getOrientation();
-  const bool isLandscapeCw = orientation == GfxRenderer::Orientation::LandscapeClockwise;
-  const bool isLandscape = isLandscapeCw || orientation == GfxRenderer::Orientation::LandscapeCounterClockwise;
-  const int hintGutterWidth = isLandscape ? metrics.sideButtonHintsWidth : 0;
-  const int contentWidth = renderer.getScreenWidth() - hintGutterWidth;
-  const BodyOrigin origin = bodyOrigin();
+  const bool isInverted = renderer.getOrientation() == GfxRenderer::Orientation::PortraitInverted;
+  const BodyArea body = bodyArea();
 
   constexpr int PADDING_X = 10;
   constexpr int PADDING_Y = 6;
   const int textWidth = renderer.getTextWidth(UI_10_FONT_ID, tr(STR_SAVE_TO_VOCAB_BUTTON));
   const int width = textWidth + 2 * PADDING_X;
   const int height = renderer.getLineHeight(UI_10_FONT_ID) + 2 * PADDING_Y;
-  const int right = origin.x + contentWidth - 2 * SIDE_PADDING;
-  const int headerY = origin.y - metrics.headerHeight + 10;
-  return Rect(right - width, headerY - PADDING_Y, width, height);
+  const int bandTop = (isInverted ? metrics.buttonHintsHeight : 0) + metrics.topPadding;
+  const int rowTop = bandTop + metrics.batteryBarHeight;
+  const int rowHeight = metrics.headerHeight - metrics.batteryBarHeight;
+  return Rect(body.x + body.width - width, rowTop + (rowHeight - height) / 2, width, height);
 }
 
 // Styled path: lay the HTML definition out through the EPUB chapter parser
@@ -119,7 +125,10 @@ Rect DictionaryDefinitionActivity::vocabButtonRect() const {
 // own the text); any failure leaves state untouched for the plain-text path.
 bool DictionaryDefinitionActivity::layoutHtmlPages() {
   const BodyArea body = bodyArea();
-  if (body.width <= 0 || body.height <= 0) return false;
+  if (body.width <= 0 || body.height <= 0) {
+    LOG_ERR("DHTML", "Invalid definition viewport: %dx%d", body.width, body.height);
+    return false;
+  }
   if (!buildDictionaryHtmlPages(renderer, definition, static_cast<uint16_t>(body.width),
                                 static_cast<uint16_t>(body.height), pages)) {
     return false;
@@ -156,7 +165,7 @@ void DictionaryDefinitionActivity::wrapText() {
   const BodyArea body = bodyArea();
   const int maxWidth = body.width;
   const int spaceWidth = renderer.getSpaceWidth(fontId, EpdFontFamily::REGULAR);
-  const int lineHeight = renderer.getLineHeight(fontId);
+  const int lineHeight = renderer.getLineHeight(fontId, PLAIN_TEXT_LINE_SPACING);
   linesPerPage = std::max(1, body.height / lineHeight);
 
   const char* text = definition.c_str();
@@ -356,10 +365,12 @@ void DictionaryDefinitionActivity::loop() {
     }
     if (tx < renderer.getScreenWidth() / 3) {
       if (currentPage > 0) {
+        haptic_feedback::touchAction();
         currentPage--;
         requestUpdate();
       }
     } else if (currentPage + 1 < totalPages) {
+      haptic_feedback::touchAction();
       currentPage++;
       requestUpdate();
     }
@@ -390,7 +401,7 @@ void DictionaryDefinitionActivity::drawBody(const int fontId, const int x, const
     pages[currentPage]->render(renderer, fontId, x, startY);
     return;
   }
-  const int lineHeight = renderer.getLineHeight(fontId);
+  const int lineHeight = renderer.getLineHeight(fontId, PLAIN_TEXT_LINE_SPACING);
   char buf[MAX_LINE_BYTES + 1];
   const int firstLine = currentPage * linesPerPage;
   const int lastLine = std::min(firstLine + linesPerPage, static_cast<int>(lines.size()));
@@ -411,40 +422,42 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
   const auto orientation = renderer.getOrientation();
   const bool isLandscapeCw = orientation == GfxRenderer::Orientation::LandscapeClockwise;
   const bool isLandscapeCcw = orientation == GfxRenderer::Orientation::LandscapeCounterClockwise;
+  const bool isInverted = orientation == GfxRenderer::Orientation::PortraitInverted;
   const int hintGutterWidth = (isLandscapeCw || isLandscapeCcw) ? metrics.sideButtonHintsWidth : 0;
+  const int contentX = isLandscapeCw ? hintGutterWidth : 0;
   const int contentWidth = renderer.getScreenWidth() - hintGutterWidth;
-  const BodyOrigin origin = bodyOrigin();
+  const int contentY = isInverted ? metrics.buttonHintsHeight : 0;
 
-  // Header: headword left; "+Vocab" button (touch boards) and/or page counter
-  // right, the counter sitting left of the button when both are present.
-  const int headerY = origin.y - metrics.headerHeight + 10;
-  renderer.drawText(UI_12_FONT_ID, origin.x, headerY, headword.c_str(), true, EpdFontFamily::BOLD);
-
-  int rightEdge = origin.x + contentWidth - 2 * SIDE_PADDING;
-  if (mappedInput.hasTouch()) {
+  // Header: headword left. On touch boards a "+Vocab" button sits at the right
+  // and the page counter moves left of it (drawn here, not by the header).
+  char counter[16] = {};
+  if (totalPages > 1) snprintf(counter, sizeof(counter), "%d/%d", currentPage + 1, totalPages);
+  const bool showVocabButton = mappedInput.hasTouch();
+  GUI.drawHeader(renderer, Rect{contentX, contentY + metrics.topPadding, contentWidth, metrics.headerHeight},
+                 headword.c_str(), (!showVocabButton && counter[0]) ? counter : nullptr);
+  if (showVocabButton) {
     const Rect btn = vocabButtonRect();
     const char* label = tr(STR_SAVE_TO_VOCAB_BUTTON);
     renderer.drawRect(btn.x, btn.y, btn.width, btn.height, true);
     const int labelWidth = renderer.getTextWidth(UI_10_FONT_ID, label);
-    renderer.drawText(UI_10_FONT_ID, btn.x + (btn.width - labelWidth) / 2, headerY, label);
-    rightEdge = btn.x - 12;
-  }
-  if (totalPages > 1) {
-    char counter[16];
-    snprintf(counter, sizeof(counter), "%d/%d", currentPage + 1, totalPages);
-    const int counterWidth = renderer.getTextWidth(UI_10_FONT_ID, counter);
-    renderer.drawText(UI_10_FONT_ID, rightEdge - counterWidth, headerY, counter);
+    const int labelY = btn.y + (btn.height - renderer.getLineHeight(UI_10_FONT_ID)) / 2;
+    renderer.drawText(UI_10_FONT_ID, btn.x + (btn.width - labelWidth) / 2, labelY, label);
+    if (counter[0]) {
+      const int counterWidth = renderer.getTextWidth(UI_10_FONT_ID, counter);
+      renderer.drawText(UI_10_FONT_ID, btn.x - 12 - counterWidth, labelY, counter);
+    }
   }
 
   // Body: two-pass draw inside a prewarm scope (same pattern as the reader's
   // renderContents) so SD-card font glyphs load from SD in one batch instead
   // of one on-demand overflow read per character on every page turn.
   const int fontId = SETTINGS.getReaderFontId();
+  const BodyArea body = bodyArea();
   auto* fcm = renderer.getFontCacheManager();
   auto scope = fcm->createPrewarmScope();
-  drawBody(fontId, origin.x, origin.y);  // scan pass: records codepoints only
+  drawBody(fontId, body.x, body.y);  // scan pass: records codepoints only
   scope.endScanAndPrewarm();
-  drawBody(fontId, origin.x, origin.y);
+  drawBody(fontId, body.x, body.y);
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), pages.empty() ? "" : tr(STR_LOOKUP),
                                             (currentPage > 0 ? "<" : ""), (currentPage + 1 < totalPages ? ">" : ""));

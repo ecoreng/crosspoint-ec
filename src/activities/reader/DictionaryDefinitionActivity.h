@@ -42,7 +42,7 @@ class DictionaryDefinitionActivity final : public Activity {
   // lifetime -- showDefinition() swaps the word being viewed, not where
   // "save" defaults to.
   explicit DictionaryDefinitionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string headword,
-                                        std::string definition, std::string dictionaryFolder,
+                                        std::string definition, std::string dictionaryFolder = {},
                                         bool htmlDefinition = false, int originBookId = 0)
       : Activity("DictionaryDefinition", renderer, mappedInput),
         headword(std::move(headword)),
@@ -66,6 +66,8 @@ class DictionaryDefinitionActivity final : public Activity {
 
   // Usable body-text area between the header and the button hints.
   struct BodyArea {
+    int x;
+    int y;
     int width;
     int height;
   };

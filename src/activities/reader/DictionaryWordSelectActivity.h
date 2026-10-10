@@ -9,6 +9,7 @@
 
 #include "activities/Activity.h"
 #include "util/Dictionary.h"
+#include "util/WordSelectionInput.h"
 
 // Word selection over one already-laid-out Page: Left/Right step through
 // words in reading order, Up/Down jump rows, Confirm looks the word up and
@@ -30,13 +31,14 @@ class DictionaryWordSelectActivity final : public Activity {
   // order and could read a null pointer.
   explicit DictionaryWordSelectActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                         std::unique_ptr<Page> page, std::string dictionaryFolder, int marginLeft,
-                                        int marginTop)
+                                        int marginTop, std::string lookupText = {})
       : Activity("DictionaryWordSelect", renderer, mappedInput),
         page(page.get()),
         ownedPage(std::move(page)),
         dictionaryFolder(std::move(dictionaryFolder)),
         marginLeft(marginLeft),
-        marginTop(marginTop) {}
+        marginTop(marginTop),
+        lookupText(std::move(lookupText)) {}
 
   // Borrows `page`: the caller keeps ownership and must keep it alive and
   // unchanged until this activity finishes (definition-view flow).
@@ -88,8 +90,10 @@ class DictionaryWordSelectActivity final : public Activity {
   std::vector<WordBox> words;
   int selected = 0;
   uint16_t rowCount = 0;
-  unsigned long lastHorizontalMoveTime = 0;
+  WordSelectionInput selectionInput;
 
+  std::string lookupText;
+  bool lookupPending = false;
   Dictionary dict;
   bool dictOpenAttempted = false;
   bool dictOpenOk = false;
