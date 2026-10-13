@@ -25,9 +25,23 @@ constexpr int BUTTON_KEYBOARD_HINT_GAP = 4;
 
 int keyboardGap(const ThemeMetrics& metrics) { return std::max(metrics.keyboardKeySpacing, KEYBOARD_MIN_GAP); }
 
-int keyboardKeysHeight(const ThemeMetrics& metrics, const int rows, const bool hasTouch) {
+constexpr int MIN_KEY_HEIGHT = 30;
+
+int inputFieldTop(const ThemeMetrics& metrics) {
+  return metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing + metrics.verticalSpacing * 4 +
+         metrics.keyboardVerticalOffset;
+}
+
+// Keys shrink on short (landscape) screens so the keyboard never covers the one-line field above it.
+int keyboardKeysHeight(GfxRenderer& renderer, const ThemeMetrics& metrics, const int rows, const bool hasTouch) {
   const int keyHeight = hasTouch ? metrics.keyboardKeyHeight : BUTTON_KEY_HEIGHT;
-  return rows * keyHeight + (rows > 1 ? (rows - 1) * keyboardGap(metrics) : 0) + KEYBOARD_PANEL_PADDING * 2;
+  const int natural =
+      rows * keyHeight + (rows > 1 ? (rows - 1) * keyboardGap(metrics) : 0) + KEYBOARD_PANEL_PADDING * 2;
+  const int hintGap = hasTouch ? metrics.verticalSpacing - metrics.keyboardVerticalOffset : BUTTON_KEYBOARD_HINT_GAP;
+  const int fieldBottom =
+      inputFieldTop(metrics) + renderer.getLineHeight(UI_12_FONT_ID) + metrics.verticalSpacing + 8;
+  const int room = renderer.getScreenHeight() - metrics.buttonHintsHeight - hintGap - fieldBottom;
+  return std::min(natural, std::max(room, rows * MIN_KEY_HEIGHT));
 }
 
 // ---------------------------------------------------------------------------
@@ -445,8 +459,7 @@ bool KeyboardEntryActivity::cursorPositionFromPoint(const int x, const int y, si
   const Rect content = UITheme::getContentArea(renderer);
 
   const int lineHeight = renderer.getLineHeight(UI_12_FONT_ID);
-  const int inputStartY = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing +
-                          metrics.verticalSpacing * 4 + metrics.keyboardVerticalOffset;
+  const int inputStartY = inputFieldTop(metrics);
 
   int availableWidth = content.width;
   if (gpio.deviceIsX3()) {
@@ -535,7 +548,7 @@ fui::Rect KeyboardEntryActivity::keyboardRect() const {
   const int pageHeight = renderer.getScreenHeight();
   const int rows = currentLayout().rowCount;
   const bool hasTouch = mappedInput.hasTouch();
-  const int height = keyboardKeysHeight(metrics, rows, hasTouch);
+  const int height = keyboardKeysHeight(renderer, metrics, rows, hasTouch);
   const int hintGap = hasTouch ? metrics.verticalSpacing - metrics.keyboardVerticalOffset : BUTTON_KEYBOARD_HINT_GAP;
   const int y = pageHeight - metrics.buttonHintsHeight - height - hintGap;
   return fui::Rect{static_cast<int16_t>(content.x), static_cast<int16_t>(y), static_cast<int16_t>(content.width),
@@ -750,8 +763,7 @@ void KeyboardEntryActivity::render(RenderLock&&) {
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, title.c_str());
 
   const int lineHeight = renderer.getLineHeight(UI_12_FONT_ID);
-  const int inputStartY = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing +
-                          metrics.verticalSpacing * 4 + metrics.keyboardVerticalOffset;
+  const int inputStartY = inputFieldTop(metrics);
   int inputHeight = 0;
 
   std::string displayText = displayTextForCurrentState();
@@ -921,7 +933,7 @@ void KeyboardEntryActivity::render(RenderLock&&) {
   }
 
   const fui::Rect kbRect = keyboardRect();
-  const int keysHeight = keyboardKeysHeight(metrics, currentLayout().rowCount, mappedInput.hasTouch());
+  const int keysHeight = keyboardKeysHeight(renderer, metrics, currentLayout().rowCount, mappedInput.hasTouch());
   const fui::Rect keysRect{kbRect.x, static_cast<int16_t>(kbRect.y + (kbRect.height - keysHeight) / 2), kbRect.width,
                            static_cast<int16_t>(keysHeight)};
 
